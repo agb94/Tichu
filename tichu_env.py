@@ -81,8 +81,7 @@ class Game:
         if combi:
             if self.current:
                 assert self.current[-1].__class__ == combi.__class__
-                if isinstance(combi, Single) and combi.card == Card("Phoenix"):
-                    combi.value = self.current[-1].value + 0.5
+                combi.update_value(self.current)
                 assert combi.value > self.current[-1].value
             self.current.append(combi)
             for c in combi.cards:
@@ -125,6 +124,9 @@ class Combination():
     def __str__(self):
         return ",".join([str(c) for c in self.cards])
 
+    def update_value(self):
+        pass
+
 class Single(Combination):
     def __init__(self, card):
         assert isinstance(card, Card)
@@ -143,6 +145,12 @@ class Single(Combination):
     @property
     def card(self):
         return self.cards[0]
+    
+    def update_value(self, current):
+        if not current:
+            pass
+        if self.card == Card("Phoenix"):
+            self.value = current[-1].value + 0.5
 
 class Pair(Combination):
     def __init__(self, *cards):
