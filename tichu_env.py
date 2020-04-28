@@ -77,7 +77,7 @@ class Game:
     def play(self, player, combi):
         assert all([c in self.hands[player] for c in combi.cards])
         assert self.turn == player
-        next_turn = (self.turn + 1) % 4
+        next_turn = (self.turn + 1) % NUM_PLAYERS
         if combi:
             if self.current:
                 assert self.current[-1].__class__ == combi.__class__
@@ -95,7 +95,7 @@ class Game:
                 self.obtained_cards[next_turn] += sum([ c.cards for c in self.current ], [])
                 self.current = []
                 self.pass_count = 0
-        self.turn = (self.turn + 1) % 4
+        self.turn = (self.turn + 1) % NUM_PLAYERS
     
     def mark_exchange(self, giver, receiver, card_index):
         assert card_index in range(len(self.hands[giver]))
