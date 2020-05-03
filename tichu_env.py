@@ -50,11 +50,16 @@ class Deck:
         num_cards = len(self.cards) / NUM_PLAYERS
         return [list(sorted(shuffled[p*num_cards:(p+1)*num_cards])) for p in range(NUM_PLAYERS)]
 
+class Player:
+    def __init__(self, hand, game):
+        self.hand = hand
+        self.game = game
+
 class Game:
     def __init__(self):
         self.current = []
         self.pass_count = 0
-        self.hands = tuple(Deck().distribute())
+        self.players = [Player(hand, self) for hand in Deck().distribute()]
         self.turn = None
         self.obtained_cards = [list() for i in range(NUM_PLAYERS)]
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
@@ -68,14 +73,14 @@ class Game:
             s += "-" + str(self.current[i])
         s += "Hands\n"
         for i in range(NUM_PLAYERS):
-            s += "- player {}: {}\n".format(i, list(map(str, self.hands[i])))
+            s += "- player {}: {}\n".format(i, list(map(str, self.players[i].hand)))
         s += "Obtained Cards\n"
         for i in range(NUM_PLAYERS):
             s += "- player {}: {}\n".format(i, list(map(str, self.obtained_cards[i])))
         return s
 
     def play(self, player, combi):
-        assert all([c in self.hands[player] for c in combi.cards])
+        assert all([c in self.players[i].hand for c in combi.cards])
         assert self.turn == player
         next_turn = (self.turn + 1) % NUM_PLAYERS
         if combi:
@@ -85,7 +90,7 @@ class Game:
                 assert combi.value > self.current[-1].value
             self.current.append(combi)
             for c in combi.cards:
-                self.hands[player].remove(c)
+                self.players[player].hand.remove(c)
             self.pass_count = 0
         else:
             # pass
@@ -97,20 +102,20 @@ class Game:
         self.turn = (self.turn + 1) % NUM_PLAYERS
     
     def mark_exchange(self, giver, receiver, card_index):
-        assert card_index in range(len(self.hands[giver]))
+        assert card_index in range(len(self.players[giver].hand))
         self.exchange_index[giver][receiver] = card_index
 
     def exchange(self):
         for i in range(NUM_PLAYERS):
             for j in range(NUM_PLAYERS):
                 if i < j:
-                    assert self.exchange_index[i,j] in range(len(self.hands[i]))
-                    assert self.exchange_index[j,i] in range(len(self.hands[j]))
+                    assert self.exchange_index[i,j] in range(len(self.players[i].hand))
+                    assert self.exchange_index[j,i] in range(len(self.players[j].hand))
                     i_to_j = int(self.exchange_index[i,j])
                     j_to_i = int(self.exchange_index[j,i])
-                    self.hands[i][i_to_j], self.hands[j][j_to_i] = self.hands[j][j_to_i], self.hands[i][i_to_j]
+                    self.players[i].hand[i_to_j], self.players[j].hand[j_to_i] = self.players[j].hand[j_to_i], self.players[i].hand[i_to_j]
         for i in range(NUM_PLAYERS):
-            if Card("MahJong") in self.hands[i]:
+            if Card("MahJong") in self.players[i].hand:
                 self.turn = i
                 break
 
