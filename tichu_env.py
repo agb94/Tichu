@@ -44,22 +44,39 @@ class Deck:
         for special in Card.SPECIALS:
             self.cards.append(Card(special))
     
-    def distribute(self):
+    def distribute(self, seed=None):
+        if seed is not None:
+            random.seed(seed)
         shuffled = self.cards[:]
         random.shuffle(shuffled)
         num_cards = len(self.cards) / NUM_PLAYERS
-        return [list(sorted(shuffled[p*num_cards:(p+1)*num_cards])) for p in range(NUM_PLAYERS)]
+        return [shuffled[p*num_cards:(p+1)*num_cards] for p in range(NUM_PLAYERS)]
 
 class Player:
-    def __init__(self, hand, game):
-        self.hand = hand
+    def __init__(self, game, player_id, hand):
         self.game = game
+        self.hand = hand
+        self.player_id = player_id
+
+    def possible_actions(self):
+        assert game.turn == self.player_id
+        actions = []
+        # ==========================================================================================
+        if self.game.current:
+            current_top = current[-1]
+            # IMPLEMENT HERE
+        else:
+            for card in self.hand:
+                actions.append(Single(card))
+        # ==========================================================================================
+        assert all([isinstance(action, Combination) or action is None for action in actions])
+        return actions
 
 class Game:
-    def __init__(self):
+    def __init__(self, seed=None):
         self.current = []
         self.pass_count = 0
-        self.players = [Player(hand, self) for hand in Deck().distribute()]
+        self.players = [Player(self, i, hand) for i, hand in enumerate(Deck().distribute(seed=seed))]
         self.turn = None
         self.obtained_cards = [list() for i in range(NUM_PLAYERS)]
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
@@ -70,24 +87,22 @@ class Game:
         s += "Exchange Index:\n{}\n".format(self.exchange_index)
         s += "Current\n"
         for i in range(len(self.current)):
-            s += "-" + str(self.current[i])
+            s += "- " + str(self.current[i]) + "\n"
         s += "Hands\n"
         for i in range(NUM_PLAYERS):
-            s += "- player {}: {}\n".format(i, list(map(str, self.players[i].hand)))
+            s += "- player {}: {}\n".format(i, list(map(str, list(sorted(self.players[i].hand)))))
         s += "Obtained Cards\n"
         for i in range(NUM_PLAYERS):
             s += "- player {}: {}\n".format(i, list(map(str, self.obtained_cards[i])))
         return s
 
     def play(self, player, combi):
-        assert all([c in self.players[i].hand for c in combi.cards])
+        assert all([c in self.players[player].hand for c in combi.cards])
         assert self.turn == player
         next_turn = (self.turn + 1) % NUM_PLAYERS
         if combi:
             if self.current:
-                assert self.current[-1].__class__ == combi.__class__
-                combi.update_value(self.current)
-                assert combi.value > self.current[-1].value
+                assert combi.win(self.current[-1])
             self.current.append(combi)
             for c in combi.cards:
                 self.players[player].hand.remove(c)
@@ -119,6 +134,9 @@ class Game:
                 self.turn = i
                 break
 
+class Bomb():
+    pass
+
 class Combination():
     def __lt__(self, other):
         return self.value < other.value
@@ -129,8 +147,30 @@ class Combination():
     def __str__(self):
         return ",".join([str(c) for c in self.cards])
 
+    def __len__(self):
+        return len(self.cards)
+
     def update_value(self):
         pass
+
+    def win(self, other):
+        if isinstance(self, Bomb):
+            if isinstance(other, Bomb):
+                # Both are bombs
+                if self.__class__ != other.__class__:
+                    return False
+                else:
+                    return self.value > other.value
+            else:
+                return True
+        elif isinstance(other, Bomb):
+            return False
+        if self.__class__ != other.__class__:
+            return False
+        if len(self) != len(other):
+            return False
+        self.update_value(other)
+        return self.value > other.value
 
 class Single(Combination):
     def __init__(self, card):
@@ -151,11 +191,11 @@ class Single(Combination):
     def card(self):
         return self.cards[0]
     
-    def update_value(self, current):
-        if not current:
+    def update_value(self, current_top):
+        if not current_top:
             pass
         if self.card == Card("Phoenix"):
-            self.value = current[-1].value + 0.5
+            self.value = current_top.value + 0.5
 
 class Pair(Combination):
     def __init__(self, *cards):
@@ -214,8 +254,34 @@ class Straight(Combination):
                 assert c == Card("Phoenix") or c.value == self.value + i
         self.cards = cards
 
+# Bomb
+class StraightFlush(Combination, Bomb):
+     def __init__(self, *cards):
+        assert len(cards) >= 5
+        assert all([isinstance(c, Card) for c in cards])
+        assert all([c.suite not in Card.SPECIALS for c in cards])
+        card_values = list([c.value for c in cards])
+        assert card_values == list(range(min(card_values), max(card_values)+1))
+        card_suites = list([c.suite for c in cards])
+        assert len(set(card_suites)) == 1
+        self.cards = cards
+        self.value = min(card_values)
+
+# Bomb
+class FourCards(Combination, Bomb):
+     def __init__(self, *cards):
+        assert len(cards) == 4
+        assert all([isinstance(c, Card) for c in cards])
+        assert all([c.suite not in Card.SPECIALS for c in cards])
+        card_values = list([c.value for c in cards])
+        assert len(set(card_values)) == 1
+        card_suites = list([c.suite for c in cards])
+        assert len(set(card_suites)) == 4
+        self.cards = cards
+        self.value = min(card_values)
+
 if __name__ == "__main__":
-    game = Game()
+    game = Game(0)
     print(game)
     game.mark_exchange(0, 1, 0)
     game.mark_exchange(0, 2, 7)
@@ -232,8 +298,11 @@ if __name__ == "__main__":
     game.exchange()
     print(game)
 
+    #print(game.players[game.turn].possible_actions())
+    game.play(3, Single(Card("MahJong")))
+    game.play(0, Single(Card("Black", 2))) 
+    print(game)
     """
-    game.play(0, Single(Card("Black", 3)))
     game.play(1, Single(Card("Phoenix")))
     game.play(2, None)
     game.play(3, None)
