@@ -1,5 +1,7 @@
 import random
 import numpy as np
+from collections import defaultdict
+from itertools import combinations
 from abc import *
 
 INF = 1000
@@ -63,8 +65,30 @@ class Player:
         actions = []
         # ==========================================================================================
         if self.game.current:
-            current_top = current[-1]
-            # IMPLEMENT HERE
+            current_top = game.current[-1]
+            card_counter = defaultdict(list)
+            
+            # 'sort' by value
+            for card in self.hand:
+                if card.number is None:
+                    card_counter[card.suite].append(card)
+                else:
+                    card_counter[card.value].append(card)
+            
+            # collect single-value combinations
+            for card_value in card_counter.keys():
+                for num_cards in range(1, 5):
+                    if card_value is None and num_cards != 1:
+                        break # specials can't constitute combinations; exception handled later
+                    for combination in combinations(card_counter[card_value], num_cards):
+                        if num_cards == 1:
+                            actions.append(Single(*combination))
+                        elif num_cards == 2:
+                            actions.append(Pair(*combination))
+                        elif num_cards == 3:
+                            actions.append(Triple(*combination))
+                        elif num_cards == 4:
+                            actions.append(FourCards(*combination))
         else:
             for card in self.hand:
                 actions.append(Single(card))
