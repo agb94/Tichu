@@ -30,7 +30,11 @@ class Card:
         return self.suite == other.suite and self.number == other.number
     
     def __lt__(self, other):
-        return self.number < other.number
+        if self.value is None:
+            return False
+        if other.value is None:
+            return True
+        return self.value < other.value
 
     def __str__(self):
         return self.suite + (str(self.number) if self.number else "")
@@ -49,13 +53,14 @@ class Deck:
             random.seed(seed)
         shuffled = self.cards[:]
         random.shuffle(shuffled)
-        num_cards = len(self.cards) / NUM_PLAYERS
+        num_cards = int(len(self.cards) / NUM_PLAYERS)
         return [shuffled[p*num_cards:(p+1)*num_cards] for p in range(NUM_PLAYERS)]
 
 class Player:
     def __init__(self, game, player_id, hand):
         self.game = game
         self.hand = hand
+        self.obtained = list()
         self.player_id = player_id
 
     def possible_actions(self):
@@ -76,10 +81,11 @@ class Game:
     def __init__(self, seed=None):
         self.current = []
         self.pass_count = 0
-        self.players = [Player(self, i, hand) for i, hand in enumerate(Deck().distribute(seed=seed))]
+        self.deck = Deck()
+        self.players = [Player(self, i, hand) for i, hand in enumerate(self.deck.distribute(seed=seed))]
         self.turn = None
-        self.obtained_cards = [list() for i in range(NUM_PLAYERS)]
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
+        self.used = list()
 
     def __str__(self):
         s = ""
@@ -93,7 +99,7 @@ class Game:
             s += "- player {}: {}\n".format(i, list(map(str, list(sorted(self.players[i].hand)))))
         s += "Obtained Cards\n"
         for i in range(NUM_PLAYERS):
-            s += "- player {}: {}\n".format(i, list(map(str, self.obtained_cards[i])))
+            s += "- player {}: {}\n".format(i, list(map(str, self.players[i].obtained)))
         return s
 
     def play(self, player, combi):
@@ -111,10 +117,12 @@ class Game:
             # pass
             self.pass_count += 1
             if self.pass_count == 3:
-                self.obtained_cards[next_turn] += sum([ c.cards for c in self.current ], [])
+                self.plyaers[next_turn].obtained += sum([ c.cards for c in self.current ], [])
                 self.current = []
                 self.pass_count = 0
-        self.turn = (self.turn + 1) % NUM_PLAYERS
+        for card in combi.cards:
+            self.used.append(card)
+        self.turn = next_turn
     
     def mark_exchange(self, giver, receiver, card_index):
         assert card_index in range(len(self.players[giver].hand))
