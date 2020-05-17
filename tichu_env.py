@@ -38,6 +38,9 @@ class Card:
 
     def __str__(self):
         return self.suite + (str(self.number) if self.number else "")
+    
+    def __hash__(self):
+        return(hash(str(self)))
 
 class Deck:
     def __init__(self):
@@ -62,6 +65,10 @@ class Player:
         self.hand = hand
         self.obtained = list()
         self.player_id = player_id
+        self.card_locs = {card: player_id for card in hand}
+
+    def remember_card_loc(self, player_id, card):
+        self.card_locs[card] = player_id
 
     def possible_actions(self):
         assert game.turn == self.player_id
@@ -102,6 +109,10 @@ class Game:
             s += "- player {}: {}\n".format(i, list(map(str, self.players[i].obtained)))
         return s
 
+    @property
+    def unused_cards(self):
+        return set(self.deck.cards) - set(self.used)
+
     def play(self, player, combi):
         assert all([c in self.players[player].hand for c in combi.cards])
         assert self.turn == player
@@ -122,6 +133,9 @@ class Game:
                 self.pass_count = 0
         for card in combi.cards:
             self.used.append(card)
+            for player in self.players:
+                player.remember_card_loc(player, card)
+
         self.turn = next_turn
     
     def mark_exchange(self, giver, receiver, card_index):
@@ -136,7 +150,16 @@ class Game:
                     assert self.exchange_index[j,i] in range(len(self.players[j].hand))
                     i_to_j = int(self.exchange_index[i,j])
                     j_to_i = int(self.exchange_index[j,i])
+
+                    self.players[i].remember_card_loc(j, self.players[i].hand[i_to_j])
+                    self.players[j].remember_card_loc(j, self.players[i].hand[i_to_j])
+                    
+                    self.players[i].remember_card_loc(i, self.players[j].hand[j_to_i])
+                    self.players[j].remember_card_loc(i, self.players[j].hand[j_to_i])
+
+                    # card swap
                     self.players[i].hand[i_to_j], self.players[j].hand[j_to_i] = self.players[j].hand[j_to_i], self.players[i].hand[i_to_j]
+
         for i in range(NUM_PLAYERS):
             if Card("MahJong") in self.players[i].hand:
                 self.turn = i
@@ -306,10 +329,7 @@ if __name__ == "__main__":
     game.exchange()
     print(game)
 
-    #print(game.players[game.turn].possible_actions())
-    game.play(3, Single(Card("MahJong")))
-    game.play(0, Single(Card("Black", 2))) 
-    print(game)
+    print(game.players[game.turn].possible_actions())
     """
     game.play(1, Single(Card("Phoenix")))
     game.play(2, None)
