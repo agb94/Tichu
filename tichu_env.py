@@ -71,6 +71,7 @@ class Player:
         self.obtained = list()
         self.player_id = player_id
         self.card_locs = {card: player_id for card in hand}
+        self.init_card_actions = []
 
     def remember_card_loc(self, player_id, card):
         self.card_locs[card] = player_id
@@ -84,7 +85,7 @@ class Player:
             val_cards = counter[search_val]
             if len(val_cards) == 0:
                 if len(prev_seqs[0]) != 0:
-                    card_values = map(lambda x: x.value, prev_seqs[0])
+                    card_values = list(map(lambda x: x.value, prev_seqs[0]))
                     min_v, max_v = min(card_values), max(card_values)
                     seq_dict[(min_v, max_v)] = prev_seqs
                 prev_seqs = [[]]
@@ -110,109 +111,128 @@ class Player:
     def possible_actions(self):
         assert game.turn == self.player_id
         actions = []
-        # ==========================================================================================
+        curr_card_set = set(self.hand)
+        if len(self.init_card_actions) == 0:
+            self.find_all_combinations()
+        available_acts = filter(lambda x: len(set(x.cards) & curr_card_set) == len(x.cards), self.init_card_actions)
         if self.game.current:
             current_top = game.current[-1]
-            
-            ## 'sort' by value
-            card_counter = defaultdict(list)
-            for card in self.hand:
-                if card.number is None:
-                    card_counter[card.suite].append(card)
+            if not isinstance(current_top, StraightFlush):
+                actions += list(filter(lambda x: type(x) == type(current_top) and x.value > current_top.value, 
+                                       available_acts))
+                if isinstance(current_top, FourCards):
+                    actions += list(filter(lambda x: isinstance(x, StraightFlush), available_acts))
                 else:
-                    card_counter[card.value].append(card)
-            
-            ## collect single-value combinations
-            phoenix_list = card_counter["Phoenix"]
-            assert len(phoenix_list) <= 1
-            has_phoenix = len(phoenix_list) != 0
-            num2comb = {1: Single, 2: Pair, 3: Triple, 4: FourCards}
-            single_value_actions = []
-            for card_value in card_counter.keys():
-                for num_cards in range(1, 5):
-                    if card_value is None and num_cards != 1:
-                        break # specials can't constitute combinations; phoenix handled later
-                    if card_value == 'Dog':
-                        break # dogs aren't included anywhere; handle separately
-                    for combination in combinations(card_counter[card_value], num_cards):
-                        single_value_actions.append(num2comb[len(combination)](*combination))
-                        
-                        if type(card_value) == int and len(combination) < 3 and has_phoenix:
-                            # phoenix combinations
-                            final_combination = combination + tuple(phoenix_list) # add phoenix if exists in hand
-                            single_value_actions.append(num2comb[len(final_combination)](*final_combination))
-            
-            ## collect consecutive-value combinations
-            # single-value consecutive sequence extraction
-            seq_actions = []
-            seq_dict = self._get_seq_permutations(card_counter)
-            
-            # phoenix
-            phoenix_seqs = []
-            seq_ranges = sorted(list(seq_dict.keys()))
-            if has_phoenix:
-                for s_idx in range(len(seq_ranges)):
-                    backward_connectable = (s_idx > 0 and (seq_ranges[s_idx][0] - seq_ranges[s_idx-1][1]) == 2)
-                    forward_connectable = (s_idx < len(seq_ranges)-1 and (seq_ranges[s_idx+1][0] - seq_ranges[s_idx][1]) == 2)
-                    
-                    if forward_connectable:
-                        for next_seq in seq_dict[seq_ranges[s_idx+1]]:
-                            phoenix_seqs += [prev_seq+phoenix_list+next_seq for prev_seq in seq_dict[seq_ranges[s_idx]]]
-                    elif seq_ranges[s_idx][1] < 14:
-                        phoenix_seqs += [seq+phoenix_list for seq in seq_dict[seq_ranges[s_idx]]]
-                    
-                    if backward_connectable:
-                        pass # handled by forward connectable
-                    elif seq_ranges[s_idx][0] > 2:
-                        phoenix_seqs += [phoenix_list+seq for seq in seq_dict[seq_ranges[s_idx]]]
-            
-            # all comb
-            maximal_seqs = []
-            if has_phoenix:
-                maximal_seqs = phoenix_seqs
+                    assert not isinstance(current_top, Bomb)
+                    actions += list(filter(lambda x: isinstance(x, Bomb), available_acts))
             else:
-                maximal_seqs = sum(seq_dict.values(), [])
-            
-            straight_ables = self._get_subsequences_over(maximal_seqs, 5)
-            for seq in straight_ables:
-                seq_actions.append(Straight(*seq))
-                start_card_suite = seq[0].suite
-                if all(map(lambda x: x.suite == start_card_suite, seq)):
-                    seq_actions.append(StraightFlush(*seq))
-            
-            # consecutive pairs
-            all_pairs = filter(lambda x: isinstance(x, Pair), single_value_actions)
-            print(list(all_pairs))
-            pair_counter = defaultdict(list)
-            for pair in all_pairs:
-                pair_counter[pair.value].append(pair)
-            
-            pair_dict = self._get_seq_permutations(pair_counter)
-            pair_seqs = sum(pair_dict.values(), [])
-            consecpair_ables = self._get_subsequences_over(pair_seqs, 2)
-            for seq in consecpair_ables:
-                all_cards = sum((pair.cards for pair in seq), [])
-                if len(set(all_cards)) != len(all_cards): # pheonix included twice
-                    phoenixes = list(filter(lambda c: c == Card("Phoenix"), all_cards))
-                    assert len(phoenixes) == 2
-                    continue
-                else:
-                    seq_actions.append(ConsecutivePair(*seq))
-            
-            ## Full House
-            all_triples = filter(lambda x: type(x) == Triple, single_value_actions)
-            full_houses = []
-            for triple in all_triples:
-                for pair in all_pairs:
-                    if triple.value != pair.value:
-                        full_houses.append(FullHouse(pair, triple))
-                
+                actions += list(filter(lambda x: (type(x) == type(current_top) and 
+                                                  (x.value > current_top.value or len(x.cards) > len(current_top.cards))), 
+                                       available_acts))
         else:
-            for card in self.hand:
-                actions.append(Single(card))
-        # ==========================================================================================
+            if len(self.game.used) == 0:
+                actions = list(filter(lambda x: x == Card("Phoenix"), available_acts))
+            else:
+                actions = list(available_acts)
         assert all([isinstance(action, Combination) or action is None for action in actions])
         return actions
+    
+    def find_all_combinations(self):
+        '''Finds all combinations and saves to self.init_card_actions.'''
+        ## 'sort' by value
+        card_counter = defaultdict(list)
+        for card in self.hand:
+            if card.number is None:
+                card_counter[card.suite].append(card)
+            else:
+                card_counter[card.value].append(card)
+
+        ## collect single-value combinations
+        phoenix_list = card_counter["Phoenix"]
+        assert len(phoenix_list) <= 1
+        has_phoenix = len(phoenix_list) != 0
+        num2comb = {1: Single, 2: Pair, 3: Triple, 4: FourCards}
+        single_value_actions = []
+        for card_value in card_counter.keys():
+            for num_cards in range(1, 5):
+                if card_value is None and num_cards != 1:
+                    break # specials can't constitute combinations; phoenix handled later
+                if card_value == 'Dog':
+                    break # dogs aren't included anywhere; handle separately
+                for combination in combinations(card_counter[card_value], num_cards):
+                    single_value_actions.append(num2comb[len(combination)](*combination))
+
+                    if type(card_value) == int and len(combination) < 3 and has_phoenix:
+                        # phoenix combinations
+                        final_combination = combination + tuple(phoenix_list) # add phoenix if exists in hand
+                        single_value_actions.append(num2comb[len(final_combination)](*final_combination))
+
+        ## collect consecutive-value combinations
+        # single-value consecutive sequence extraction
+        seq_actions = []
+        seq_dict = self._get_seq_permutations(card_counter)
+
+        # phoenix
+        phoenix_seqs = []
+        seq_ranges = sorted(list(seq_dict.keys()))
+        if has_phoenix:
+            for s_idx in range(len(seq_ranges)):
+                backward_connectable = (s_idx > 0 and (seq_ranges[s_idx][0] - seq_ranges[s_idx-1][1]) == 2)
+                forward_connectable = (s_idx < len(seq_ranges)-1 and (seq_ranges[s_idx+1][0] - seq_ranges[s_idx][1]) == 2)
+
+                if forward_connectable:
+                    for next_seq in seq_dict[seq_ranges[s_idx+1]]:
+                        phoenix_seqs += [prev_seq+phoenix_list+next_seq for prev_seq in seq_dict[seq_ranges[s_idx]]]
+                elif seq_ranges[s_idx][1] < 14:
+                    phoenix_seqs += [seq+phoenix_list for seq in seq_dict[seq_ranges[s_idx]]]
+
+                if backward_connectable:
+                    pass # handled by forward connectable
+                elif seq_ranges[s_idx][0] > 2:
+                    phoenix_seqs += [phoenix_list+seq for seq in seq_dict[seq_ranges[s_idx]]]
+
+        # all comb
+        maximal_seqs = []
+        if has_phoenix:
+            maximal_seqs = phoenix_seqs
+        else:
+            maximal_seqs = sum(seq_dict.values(), [])
+
+        straight_ables = self._get_subsequences_over(maximal_seqs, 5)
+        for seq in straight_ables:
+            seq_actions.append(Straight(*seq))
+            start_card_suite = seq[0].suite
+            if all(map(lambda x: x.suite == start_card_suite, seq)):
+                seq_actions.append(StraightFlush(*seq))
+
+        # consecutive pairs
+        all_pairs = filter(lambda x: isinstance(x, Pair), single_value_actions)
+        pair_counter = defaultdict(list)
+        for pair in all_pairs:
+            pair_counter[pair.value].append(pair)
+
+        pair_dict = self._get_seq_permutations(pair_counter)
+        pair_seqs = sum(pair_dict.values(), [])
+        consecpair_ables = self._get_subsequences_over(pair_seqs, 2)
+        for seq in consecpair_ables:
+            all_cards = sum((pair.cards for pair in seq), [])
+            if len(set(all_cards)) != len(all_cards): # pheonix included twice
+                phoenixes = list(filter(lambda c: c == Card("Phoenix"), all_cards))
+                assert len(phoenixes) >= 2
+                continue
+            else:
+                seq_actions.append(ConsecutivePair(*seq))
+
+        ## Full House
+        all_triples = filter(lambda x: type(x) == Triple, single_value_actions)
+        full_houses = []
+        for triple in all_triples:
+            for pair in all_pairs:
+                if triple.value != pair.value:
+                    full_houses.append(FullHouse(pair, triple))
+        
+        self.init_card_actions = single_value_actions + seq_actions + full_houses
+        
 
 class Game:
     def __init__(self, seed=None):
