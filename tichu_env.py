@@ -259,27 +259,27 @@ class Game:
         return set(self.deck.cards) - set(self.used)
 
     def play(self, player, combi):
-        assert all([c in self.players[player].hand for c in combi.cards])
         assert self.turn == player
         next_turn = (self.turn + 1) % NUM_PLAYERS
         if combi:
+            assert all([c in self.players[player].hand for c in combi.cards])
             if self.current:
                 assert combi.win(self.current[-1])
             self.current.append(combi)
             for c in combi.cards:
                 self.players[player].hand.remove(c)
             self.pass_count = 0
+            for card in combi.cards:
+                self.used.append(card)
+                for player in self.players:
+                    player.remember_card_loc(player, card)
         else:
             # pass
             self.pass_count += 1
             if self.pass_count == NUM_PLAYERS-1:
-                self.plyaers[next_turn].obtained += sum([ c.cards for c in self.current ], [])
+                self.players[next_turn].obtained += sum([ c.cards for c in self.current ], [])
                 self.current = []
                 self.pass_count = 0
-        for card in combi.cards:
-            self.used.append(card)
-            for player in self.players:
-                player.remember_card_loc(player, card)
 
         self.turn = next_turn
     
