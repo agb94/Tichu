@@ -109,29 +109,19 @@ class Player:
         return subseq_list
         
     def possible_actions(self):
-        assert game.turn == self.player_id
+        assert self.game.turn == self.player_id
         actions = []
         curr_card_set = set(self.hand)
         if len(self.init_card_actions) == 0:
             self.find_all_combinations()
         available_acts = filter(lambda x: len(set(x.cards) & curr_card_set) == len(x.cards), self.init_card_actions)
         if self.game.current:
-            current_top = game.current[-1]
-            if not isinstance(current_top, StraightFlush):
-                actions += list(filter(lambda x: type(x) == type(current_top) and x.value > current_top.value, 
-                                       available_acts))
-                if isinstance(current_top, FourCards):
-                    actions += list(filter(lambda x: isinstance(x, StraightFlush), available_acts))
-                else:
-                    assert not isinstance(current_top, Bomb)
-                    actions += list(filter(lambda x: isinstance(x, Bomb), available_acts))
-            else:
-                actions += list(filter(lambda x: (type(x) == type(current_top) and 
-                                                  (x.value > current_top.value or len(x.cards) > len(current_top.cards))), 
-                                       available_acts))
+            current_top = self.game.current[-1]
+            actions += list(filter(lambda x: x.win(current_top), available_acts))
         else:
             if len(self.game.used) == 0:
-                actions = list(filter(lambda x: x == Card("Phoenix"), available_acts))
+                actions = list(filter(lambda x: isinstance(x, Single) and x.value == 1, 
+                                      available_acts))
             else:
                 actions = list(available_acts)
         assert all([isinstance(action, Combination) or action is None for action in actions])
@@ -235,11 +225,16 @@ class Player:
         
 
 class Game:
-    def __init__(self, seed=None):
+    def __init__(self, seed=None, players=None):
         self.current = []
         self.pass_count = 0
         self.deck = Deck()
-        self.players = [Player(self, i, hand) for i, hand in enumerate(self.deck.distribute(seed=seed))]
+        if players is None:
+            players = [Player for _ in range(NUM_PLAYERS)]
+        else:
+            assert len(players) == NUM_PLAYERS
+            assert all(map(lambda x: issubclass(x, Player), players))
+        self.players = [p(self, i, hand) for i, (p, hand) in enumerate(zip(players, self.deck.distribute(seed=seed)))]
         self.turn = None
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
         self.used = list()
@@ -277,7 +272,7 @@ class Game:
         else:
             # pass
             self.pass_count += 1
-            if self.pass_count == 3:
+            if self.pass_count == NUM_PLAYERS-1:
                 self.plyaers[next_turn].obtained += sum([ c.cards for c in self.current ], [])
                 self.current = []
                 self.pass_count = 0
@@ -333,18 +328,22 @@ class Combination():
 
     def update_value(self):
         pass
-
+    
     def win(self, other):
-        if isinstance(self, Bomb):
-            if isinstance(other, Bomb):
-                # Both are bombs
-                if self.__class__ != other.__class__:
-                    return False
-                else:
-                    return self.value > other.value
+        if isinstance(self, StraightFlush):
+            if isinstance(other, StraightFlush):
+                return len(self.cards) > len(other.cards) or self.value > other.value
             else:
                 return True
+        elif isinstance(self, FourCards):
+            if isinstance(other, StraightFlush):
+                return False
+            elif isinstance(other, FourCards):
+                return self.value > other.value
+            else:
+                return true
         elif isinstance(other, Bomb):
+            # self not bomb, other is
             return False
         if self.__class__ != other.__class__:
             return False
@@ -422,7 +421,7 @@ class Straight(Combination):
 
         first_card = cards[0]
         if cards[0] == Card("Phoenix"):
-            self.value = cards[1]
+            self.value = cards[1].value-1
         elif cards[0] == Card("MahJong"):
             self.value = 1
         else:
