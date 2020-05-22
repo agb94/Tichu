@@ -188,13 +188,14 @@ class Player:
         available_acts = filter(lambda x: len(set(x.cards) & curr_card_set) == len(x.cards), init_card_actions)
         if game.current:
             current_top = game.current[-1]
-            actions += list(filter(lambda x: x.win(current_top), available_acts))
+            actions += list(filter(lambda x: x.win(current_top), available_acts)) + [None]
         else:
             if len(game.used) == 0:
                 actions = list(filter(lambda x: isinstance(x, Single) and x.value == 1, 
                                       available_acts))
             else:
-                actions = list(available_acts)
+                actions = list(available_acts) + [None]
+
         assert all([isinstance(action, Combination) or action is None for action in actions])
         return actions
 
@@ -322,11 +323,16 @@ class Bomb():
     pass
 
 class Combination():
+    
+    """
     def __lt__(self, other):
         return self.value < other.value
-    
+    """
+
     def __eq__(self, other):
-        return self.value == other.value
+        if other is None:
+            return False
+        return set(self.cards) == set(other.cards)
 
     def __str__(self):
         return ",".join([str(c) for c in self.cards])
