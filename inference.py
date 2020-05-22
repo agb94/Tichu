@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import random
 import pyro
 import pyro.infer
 import pyro.optim
@@ -22,9 +23,9 @@ def model(game, observer, action):
     player_idx = other_players.index(game.turn)
     hand_probs = torch.tensor(num_hand_cards, dtype=torch.float32)
     assert torch.sum(hand_probs) == len(unknown_cards)
+    normalized_hand_probs = hand_probs / torch.sum(hand_probs)
     #print("There are {}/{} unknown locations of cards".format(len(unknown_cards), len(game.deck.cards)))
     #print("Size of hands {}: {}".format(other_players, hand_probs)) 
-    normalized_hand_probs = hand_probs / torch.sum(hand_probs)
     #print("probability of hands of {}: {}".format(other_players, normalized_hand_probs))
 
     unknown_cards = list(unknown_cards)
@@ -33,19 +34,18 @@ def model(game, observer, action):
         """
         FIXME: prior distribution of cards?
         """
-        alpha = torch.tensor(6.0)
-        beta = torch.tensor(10.0)
-        with pyro.plate('{}_probs_plate'.format(card), len(other_players)):
-            player_probs = pyro.sample('{}_player_probs'.format(card), dist.Beta(alpha, beta))
-            #player_probs *= normalized_hand_probs
-        normalized_player_probs = player_probs / torch.sum(player_probs)
-        #print(card, normalized_player_probs)
+        a = torch.tensor(10.0)
+        b = torch.tensor(10.0)
+        c = torch.tensor(10.0)
+        player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack([a, b, c])))
+        normalized_player_probs = player_probs #/ torch.sum(player_probs)
+        print(card, normalized_player_probs)
         probs.append(normalized_player_probs)
     probs = torch.stack(probs)
    
     hands = [list() for p in other_players]
     card_probs = [list() for p in other_players]
-    for i, card in enumerate(unknown_cards):
+    for i, card in random.sample(tuple(enumerate(unknown_cards)), len(unknown_cards)):
         assigned = False
         while not assigned:
             player = pyro.sample('card_{}'.format(card), dist.Categorical(probs=probs[i]))
@@ -55,7 +55,7 @@ def model(game, observer, action):
                 assigned = True
 
     for i, card in enumerate(hands[player_idx]):
-        #print(card, card_probs[player_idx][i])
+        print(card, card_probs[player_idx][i])
         pass
 
     possible_actions = Player._get_possible_actions(game, hands[player_idx], None)
@@ -63,7 +63,7 @@ def model(game, observer, action):
     if action in possible_actions:
         prob = action_probs[possible_actions.index(action)]
     else:
-        prob = .0    
+        prob = .0
     return prob
 
 game = Game(seed=0)
@@ -82,6 +82,21 @@ game.mark_exchange(3, 1, 7)
 game.mark_exchange(3, 2, 1)
 game.exchange()
 game.play(game.turn, game.players[game.turn].possible_actions()[0])
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
+print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
 print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
 print(model(game, my_id, game.players[game.turn].possible_actions()[0]))
 print(model(game, my_id, game.players[game.turn].possible_actions()[0]))

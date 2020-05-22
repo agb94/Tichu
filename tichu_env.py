@@ -355,7 +355,7 @@ class Combination():
             elif isinstance(other, FourCards):
                 return self.value > other.value
             else:
-                return true
+                return True
         elif isinstance(other, Bomb):
             # self not bomb, other is
             return False
