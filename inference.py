@@ -25,7 +25,7 @@ def model(game, observer, action):
     assert torch.sum(hand_probs) == len(unknown_cards)
     normalized_hand_probs = hand_probs / torch.sum(hand_probs)
     #print("There are {}/{} unknown locations of cards".format(len(unknown_cards), len(game.deck.cards)))
-    #print("Size of hands {}: {}".format(other_players, hand_probs)) 
+    #print("Size of hands {}: {}".format(other_players, hand_probs))
     #print("probability of hands of {}: {}".format(other_players, normalized_hand_probs))
 
     unknown_cards = list(unknown_cards)
@@ -42,7 +42,7 @@ def model(game, observer, action):
         print(card, normalized_player_probs)
         probs.append(normalized_player_probs)
     probs = torch.stack(probs)
-   
+
     hands = [list() for p in other_players]
     card_probs = [list() for p in other_players]
     for i, card in random.sample(tuple(enumerate(unknown_cards)), len(unknown_cards)):

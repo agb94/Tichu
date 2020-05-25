@@ -30,10 +30,10 @@ class Card:
 
     def __eq__(self, other):
         return self.suite == other.suite and self.number == other.number
-    
+
     def __ne__(self, other):
         return not self.__eq__(other)
-    
+
     def __lt__(self, other):
         if self.value is None:
             return False
@@ -43,7 +43,7 @@ class Card:
 
     def __str__(self):
         return self.suite + (str(self.number) if self.number else "")
-    
+
     def __hash__(self):
         return(hash(str(self)))
 
@@ -55,7 +55,7 @@ class Deck:
                 self.cards.append(Card(color, number))
         for special in Card.SPECIALS:
             self.cards.append(Card(special))
-    
+
     def distribute(self, seed=None):
         if seed is not None:
             random.seed(seed)
@@ -178,7 +178,7 @@ class Player:
                     full_houses.append(FullHouse(pair, triple))
 
         return single_value_actions + seq_actions + full_houses
-    
+
     @classmethod
     def _get_possible_actions(cls, game, hand, init_card_actions=None):
         actions = []
@@ -191,7 +191,7 @@ class Player:
             actions += list(filter(lambda x: x.win(current_top), available_acts)) + [None]
         else:
             if len(game.used) == 0:
-                actions = list(filter(lambda x: isinstance(x, Single) and x.value == 1, 
+                actions = list(filter(lambda x: isinstance(x, Single) and x.value == 1,
                                       available_acts))
             else:
                 actions = list(available_acts) + [None]
@@ -220,7 +220,7 @@ class Player:
                 prev_seqs = post_straights
             search_val += 1
         return seq_dict
-    
+
     @classmethod
     def _get_subsequences_over(cls, sequences, threshold):
         straight_seqs = filter(lambda x: len(x) >= threshold, sequences)
@@ -291,7 +291,7 @@ class Game:
                 self.pass_count = 0
 
         self.turn = next_turn
-    
+
     def mark_exchange(self, giver, receiver, card_index):
         assert card_index in range(len(self.players[giver].hand))
         self.exchange_index[giver][receiver] = card_index
@@ -307,7 +307,7 @@ class Game:
 
                     self.players[i].remember_card_loc(j, self.players[i].hand[i_to_j])
                     self.players[j].remember_card_loc(j, self.players[i].hand[i_to_j])
-                    
+
                     self.players[i].remember_card_loc(i, self.players[j].hand[j_to_i])
                     self.players[j].remember_card_loc(i, self.players[j].hand[j_to_i])
 
@@ -323,7 +323,7 @@ class Bomb():
     pass
 
 class Combination():
-    
+
     """
     def __lt__(self, other):
         return self.value < other.value
@@ -342,7 +342,7 @@ class Combination():
 
     def update_value(self):
         pass
-    
+
     def win(self, other):
         if isinstance(self, StraightFlush):
             if isinstance(other, StraightFlush):
@@ -384,7 +384,7 @@ class Single(Combination):
     @property
     def card(self):
         return self.cards[0]
-    
+
     def update_value(self, current_top):
         if not current_top:
             pass
@@ -440,7 +440,7 @@ class Straight(Combination):
             self.value = 1
         else:
             self.value = cards[0].value
-        
+
         for i, c in enumerate(cards):
             if c == Card("MahJong"):
                 assert i == 0
