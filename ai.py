@@ -35,7 +35,7 @@ class RandomPlayer(AutonomousPlayer):
 def test_player():
     from tichu_env import Game
     game = Game(0, [RandomPlayer for _ in range(4)])
-    game.run_game(upto='firstRound')
+    game.run_game(upto='firstRound', verbose=True)
     print(game)
     
 if __name__ == '__main__':
