@@ -103,8 +103,6 @@ class Player:
             for num_cards in range(1, 5):
                 if card_value is None and num_cards != 1:
                     break # specials can't constitute combinations; phoenix handled later
-                if card_value == 'Dog':
-                    break # dogs aren't included anywhere; handle separately
                 for combination in combinations(card_counter[card_value], num_cards):
                     single_value_actions.append(num2comb[len(combination)](*combination))
 
@@ -275,6 +273,9 @@ class Game:
             if self.current:
                 assert combi.win(self.current[-1])
             self.current.append(combi)
+            if isinstance(combi, Single) and combi.card == Card("Dog"):
+                # dog causes next player skip
+                next_turn = (next_turn + 1) % NUM_PLAYERS
             for c in combi.cards:
                 self.players[player].hand.remove(c)
             self.pass_count = 0
@@ -333,7 +334,7 @@ class Game:
                 score -= 25
         return score
 
-    def run_game(self, upto='scoring'):
+    def run_game(self, upto='scoring', verbose=False):
         '''Runs game from beginning to a certain point.
         If runs to scoring, returns final scores of players.
         Otherwise, returns empty list.'''
@@ -360,6 +361,8 @@ class Game:
             while new_turn or self.pass_count != 0:
                 player = self.players[self.turn]
                 a = player.sample_action()
+                if verbose:
+                    print(self.turn, a)
                 self.play(self.turn, a)
                 new_turn = False
         if 3 <= upto_stage:
@@ -367,6 +370,8 @@ class Game:
             while True:
                 player = self.players[self.turn]
                 a = player.sample_action()
+                if verbose:
+                    print(self.turn, a)
                 self.play(self.turn, a)
                 left_cards = map(lambda x: int(len(x.hand) == 0), self.players)
                 if sum(left_cards) >= 3:
@@ -418,6 +423,13 @@ class Combination():
         elif isinstance(other, Bomb):
             # self not bomb, other is
             return False
+
+        # dog stuff
+        if isinstance(other, Single) and other.card == Card("Dog"):
+            return True
+        elif isinstance(self, Single) and self.card == Card("Dog"):
+            return False
+
         if self.__class__ != other.__class__:
             return False
         if len(self) != len(other):
@@ -431,11 +443,12 @@ class Combination():
 class Single(Combination):
     def __init__(self, card):
         assert isinstance(card, Card)
-        assert card != Card("Dog")
         self.cards = [card]
 
         if card == Card("MahJong"):
             self.value = 1
+        elif card == Card("Dog"):
+            self.value = 0
         elif card == Card("Dragon"):
             self.value = INF
         elif card == Card("Phoenix"):
@@ -452,6 +465,12 @@ class Single(Combination):
             pass
         if self.card == Card("Phoenix"):
             self.value = current_top.value + 0.5
+
+class MahJongSingle(Single):
+    def __init__(self, card, call_value):
+        assert card == Card("MahJong")
+        self.cards = [card]
+        self.call_value = call_value
 
 class Pair(Combination):
     def __init__(self, *cards):
