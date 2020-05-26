@@ -346,8 +346,14 @@ class Game:
                 self.play(self.turn, a)
                 new_turn = False
         if 3 <= upto_stage:
-            # rest of game to be implemented...
-            pass
+            # rest of game 
+            while True:
+                player = self.players[self.turn]
+                a = player.sample_action()
+                self.play(self.turn, a)
+                left_cards = map(lambda x: int(len(x.hand) == 0), self.players)
+                if sum(left_cards) >= 3:
+                    break
         
 
 class Bomb():
@@ -394,7 +400,10 @@ class Combination():
             return False
         if len(self) != len(other):
             return False
-        self.update_value(other)
+        if isinstance(self, Single):
+            self.update_value(other)
+        else:
+            self.update_value()
         return self.value > other.value
 
 class Single(Combination):
@@ -477,7 +486,7 @@ class Straight(Combination):
                 assert i == 0
             else:
                 assert c == Card("Phoenix") or c.value == self.value + i
-        self.cards = cards
+        self.cards = list(cards)
 
 # Bomb
 class StraightFlush(Combination, Bomb):
