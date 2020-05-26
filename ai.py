@@ -7,15 +7,12 @@ class RandomPlayer(Player):
     '''Simple player that performs random actions.
     Mostly provided as a reference point for AI API.'''
     
-    def sample_action(self):
-        '''Samples uniformly from all available actions.
-        Returns an instance of the Combination class,
-        or an empty list if there is no action possible.'''
+    def action_probs(self):
+        '''Returns list of actions and their odds.'''
         my_options = self.possible_actions()
-        if len(my_options) == 0:
-            return []
-        else:
-            return random.sample(my_options, 1)[0]
+        action_num = len(my_options)
+        any_option_odds = 1./action_num
+        return [(action, any_option_odds) for action in my_options]
 
 def test_player():
     from tichu_env import Game
