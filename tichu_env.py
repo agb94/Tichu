@@ -318,6 +318,37 @@ class Game:
             if Card("MahJong") in self.players[i].hand:
                 self.turn = i
                 break
+    
+    def run_game(self, upto='end'):
+        '''Runs game from beginning to a certain point.'''
+        stages = ['bigTichu', 'exchange', 'firstRound', 'end']
+        assert upto in stages
+        upto_stage = stages.index(upto)
+        
+        if 0 <= upto_stage:
+            # big tichu part not implemented right now...
+            pass
+        if 1 <= upto_stage:
+            # exchanging
+            exchange_pairs = []
+            for p_idx in range(NUM_PLAYERS):
+                for pair in self.players[p_idx].choose_exchange():
+                    exchange_pairs.append((p_idx,)+pair)
+            for exchange_v in exchange_pairs:
+                self.mark_exchange(*exchange_v)
+            self.exchange()
+        if 2 <= upto_stage:
+            # up to first round
+            new_turn = True
+            while new_turn or self.pass_count != 0:
+                player = self.players[self.turn]
+                a = player.sample_action()
+                self.play(self.turn, a)
+                new_turn = False
+        if 3 <= upto_stage:
+            # rest of game to be implemented...
+            pass
+        
 
 class Bomb():
     pass
