@@ -319,12 +319,29 @@ class Game:
                 self.turn = i
                 break
     
-    def run_game(self, upto='end'):
-        '''Runs game from beginning to a certain point.'''
-        stages = ['bigTichu', 'exchange', 'firstRound', 'end']
+    @staticmethod
+    def card_scorer(cards):
+        score = 0
+        for card in cards:
+            if card.value == 10 or card.value == 13:
+                score += 10
+            elif card.value == 5:
+                score += 5
+            elif card.suite == "Dragon":
+                score += 25
+            elif card.suite == "Phoenix":
+                score -= 25
+        return score
+
+    def run_game(self, upto='scoring'):
+        '''Runs game from beginning to a certain point.
+        If runs to scoring, returns final scores of players.
+        Otherwise, returns empty list.'''
+        stages = ['bigTichu', 'exchange', 'firstRound', 'end', 'scoring']
         assert upto in stages
         upto_stage = stages.index(upto)
         
+        scores = []
         if 0 <= upto_stage:
             # big tichu part not implemented right now...
             pass
@@ -354,6 +371,11 @@ class Game:
                 left_cards = map(lambda x: int(len(x.hand) == 0), self.players)
                 if sum(left_cards) >= 3:
                     break
+        if 4 <= upto_stage:
+            # scoring
+            scores = [self.__class__.card_scorer(player.obtained) for player in self.players]
+
+        return scores
         
 
 class Bomb():
