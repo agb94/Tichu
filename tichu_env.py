@@ -55,6 +55,7 @@ class Deck:
                 self.cards.append(Card(color, number))
         for special in Card.SPECIALS:
             self.cards.append(Card(special))
+        self.distributed_cards = []
     
     def distribute(self, seed=None):
         if seed is not None:
@@ -63,14 +64,29 @@ class Deck:
         random.shuffle(shuffled)
         num_cards = int(len(self.cards) / NUM_PLAYERS)
         return [shuffled[p*num_cards:(p+1)*num_cards] for p in range(NUM_PLAYERS)]
+    
+    def staged_distribute(self, num_cards, seed=None):
+        if seed is None:
+            random.seed(seed)
+        shuffled = self.cards[:]
+        random.shuffle(shuffled)
+        
+        card_set = set(self.cards)
+        to_give = []
+        for i in range(NUM_PLAYERS):
+            given_card_set = set(self.distributed_cards)
+            sampled_cards = random.sample(card_set - given_card_set, num_cards)
+            self.distributed_cards += sampled_cards
+            to_give.append(sampled_cards)
+        return to_give
 
 class Player:
-    def __init__(self, game, player_id, hand):
+    def __init__(self, game, player_id):
         self.game = game
-        self.hand = hand
+        self.hand = []
         self.obtained = list()
         self.player_id = player_id
-        self.card_locs = {card: player_id for card in hand}
+        self.card_locs = {}
         self.init_card_actions = []
 
     def remember_card_loc(self, player_id, card):
@@ -81,6 +97,11 @@ class Player:
         if len(self.init_card_actions) == 0:
             self.init_card_actions = self.__class__.find_all_combinations(self.hand)
         return self.__class__._get_possible_actions(self.game, self.hand, self.init_card_actions)
+    
+    def add_cards_to_hand(self, cards):
+        assert all(map(lambda x: isinstance(x, Card), cards))
+        self.hand += cards
+        self.card_locs.update({card: self.player_id for card in self.hand})
 
     @classmethod
     def find_all_combinations(cls, hand):
@@ -261,7 +282,7 @@ class Game:
         else:
             assert len(players) == NUM_PLAYERS
             assert all(map(lambda x: issubclass(x, Player), players))
-        self.players = [p(self, i, hand) for i, (p, hand) in enumerate(zip(players, self.deck.distribute(seed=seed)))]
+        self.players = [p(self, i) for i, p in enumerate(players)]
         self.turn = None
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
         self.used = list()
@@ -269,6 +290,8 @@ class Game:
         self.call_value = -1
         self.call_initiated = False
         self.call_satisifed = False
+        self.called_big_tichu = [False for _ in range(4)]
+        self.called_small_tichu = [False for _ in range(4)]
 
     def __str__(self):
         s = ""
@@ -375,10 +398,16 @@ class Game:
         
         scores = []
         if 0 <= upto_stage:
-            # big tichu part not implemented right now...
-            pass
+            # initial distribution of cards and extracting big tichu
+            for idx, sampled_cards in enumerate(self.deck.staged_distribute(8)):
+                self.players[idx].add_cards_to_hand(sampled_cards)
+                self.called_big_tichu[idx] = self.players[idx].call_big_tichu()
         if 1 <= upto_stage:
             # exchanging
+            
+            for idx, sampled_cards in enumerate(self.deck.staged_distribute(6)):
+                self.players[idx].add_cards_to_hand(sampled_cards) # distributing rest of cards
+            
             exchange_pairs = []
             for p_idx in range(NUM_PLAYERS):
                 for pair in self.players[p_idx].choose_exchange():

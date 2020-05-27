@@ -17,6 +17,9 @@ class AutonomousPlayer(Player):
     def choose_exchange(self):
         '''Provides list of (user index, card index to send)'''
         raise NotImplementedError
+    
+    def call_big_tichu(self):
+        raise NotImplementedError
 
 class RandomPlayer(AutonomousPlayer):
     '''Simple player that performs random actions.'''
@@ -31,6 +34,13 @@ class RandomPlayer(AutonomousPlayer):
         other_idxs = list(filter(lambda x: x != self.player_id, range(4)))
         picked_cards = random.sample(range(len(self.hand)), 3)
         return list(zip(other_idxs, picked_cards))
+    
+    def call_big_tichu(self):
+        baseline_odds = 0.1
+        if random.random() < baseline_odds:
+            return True
+        else:
+            return False
 
 def test_player():
     from tichu_env import Game
