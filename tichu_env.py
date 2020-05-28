@@ -281,8 +281,8 @@ class Game:
             players = [Player for _ in range(NUM_PLAYERS)]
         else:
             assert len(players) == NUM_PLAYERS
-            assert all(map(lambda x: issubclass(x, Player), players))
         self.players = [p(self, i) for i, p in enumerate(players)]
+        assert all(map(lambda x: issubclass(x, Player), self.players))
         self.turn = None
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
         self.used = list()
