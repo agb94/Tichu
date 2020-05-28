@@ -48,31 +48,33 @@ class NeuralPlayer(AutonomousPlayer):
         super().__init__(game, player_id)
         self.network = network
     
-    def state_rep(self, modified_hand):
+    def normalized_playerid(self, id):
+        return (id - self.player_id) % NUM_PLAYERS
+
+    def card_rep(self, action):
         '''Returns game state in a tensor format.'''
+        # card information
         norm_card_states = np.zeros((4, 13))
         spec_card_states = np.zeros((4, 1))
-        obtain_states = np.zeros((4, 13))
-        current_top = -1
-        tichu_calls = []
-        cards_in_hand = []
         
-        curr_cards = set(sum([c.cards for c in self.game.current], []))
+        modified_hand = set(self.hand) - set(action.cards)
+        curr_cards = set(sum([c.cards for c in self.game.current], [])) | set(action.cards)
         used_cards = set(self.game.used)
+        known_cards = set(self.card_locs.keys())
         # card state key: 0 in my hand; 1 in current play; 2 played; 
         # 3-5 known but unused; 6 unknown
         for card in self.game.deck.cards:
-            # normies
             if card in modified_hand: # not sure if ok
                 state_val = 0
             elif card in curr_cards:
                 state_val = 1
             elif card in used_cards:
                 state_val = 2
-            elif card in self.card_locs.keys():
-                raise NotImplementedError # todo
+            elif card in known_cards:
+                card_owner = self.card_locs[card]
+                state_val = self.normalized_playerid(card_owner) + 3
             elif card in self.game.unused_cards:
-                state_val = 3
+                state_val = 6
             else:
                 raise ValueError(f'{card} is of unknown state')
             
@@ -84,16 +86,33 @@ class NeuralPlayer(AutonomousPlayer):
                 number_idx = Card.NUMBERS[card.number] - 2
                 norm_card_states[suite_idx, number_idx] = state_val
         
-        print(norm_card_states)
-        print('a-ok')
-        exit(0)
+        return norm_card_states, spec_card_states
+    
+    def noncard_rep(self, action):
+        if action is None:
+            curr_owner = (self.game.turn - (self.game.pass_count-1)) % 4
+            owner_rep = self.normalized_playerid(curr_owner)
+            call_value = 0
+        else:
+            owner_rep = 0 # if not skip, any action incurs my owning pile (I think).
+            if isinstance(action, MahJongSingle):
+                call_value = action.call_value - 1
+            else:
+                call_value = 0
+        return owner_rep, call_value
+
+    def action_value(self, action):
+        action_card_rep = self.card_rep(action)
+        action_noncard_rep = self.noncard_rep(action)
+        estimated_value = self.network(action_card_rep, action_noncard_rep)
+        return estimated_value
     
     def action_probs(self):
         my_options = self.possible_actions()
+        self.action_value(my_options[0])
         action_num = len(my_options)
         any_option_odds = 1./action_num
         return [(action, any_option_odds) for action in my_options]
-        pass
                 
     def call_big_tichu(self):
         baseline_odds = 0.1
@@ -112,7 +131,8 @@ def test_player():
     game = Game(0, [lambda x, y: NeuralPlayer(x, y, None) for _ in range(4)])
     game.run_game(upto='firstRound', verbose=True)
     print(game)
-    print(game.players[0].state_rep(game.players[0].hand))
+    test_idx = 0
+    print(game.players[test_idx].state_rep(game.players[test_idx].hand))
     
 if __name__ == '__main__':
     test_player()

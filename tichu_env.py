@@ -282,7 +282,7 @@ class Game:
         else:
             assert len(players) == NUM_PLAYERS
         self.players = [p(self, i) for i, p in enumerate(players)]
-        assert all(map(lambda x: issubclass(x, Player), self.players))
+        assert all(map(lambda x: isinstance(x, Player), self.players))
         self.turn = None
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
         self.used = list()
@@ -605,7 +605,7 @@ class StraightFlush(Combination, Bomb):
         assert card_values == list(range(min(card_values), max(card_values)+1))
         card_suites = list([c.suite for c in cards])
         assert len(set(card_suites)) == 1
-        self.cards = cards
+        self.cards = list(cards)
         self.value = min(card_values)
 
 # Bomb
