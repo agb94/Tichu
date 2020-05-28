@@ -2,6 +2,7 @@ import random
 import numpy as np
 
 from tichu_env import *
+import torch
 
 class AutonomousPlayer(Player):
     def action_probs(self):
@@ -44,9 +45,10 @@ class RandomPlayer(AutonomousPlayer):
 
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
-    def __init__(self, game, player_id, network):
+    def __init__(self, game, player_id, network, device='cuda'):
         super().__init__(game, player_id)
         self.network = network
+        self.device = device
     
     def normalized_playerid(self, id):
         return (id - self.player_id) % NUM_PLAYERS
@@ -101,21 +103,36 @@ class NeuralPlayer(AutonomousPlayer):
                 call_value = 0
         return owner_rep, call_value
 
+    @classmethod
+    def state2Tensor(cls, card_rep, noncard_rep, device='cuda'):
+        norm_cr, spec_cr = card_rep
+        owner_idx, call_idx = noncard_rep
+        norm_cr = torch.LongTensor(norm_cr).unsqueeze(0).to(device)
+        spec_cr = torch.LongTensor(spec_cr).unsqueeze(0).to(device)
+
+        owner_idx = torch.LongTensor([owner_idx]).unsqueeze(0).to(device)
+        call_idx = torch.LongTensor([call_idx]).unsqueeze(0).to(device)
+
+        return (norm_cr, spec_cr), (owner_idx, call_idx)
+
     def action_value(self, action):
         action_card_rep = self.card_rep(action)
         action_noncard_rep = self.noncard_rep(action)
-        estimated_value = self.network(action_card_rep, action_noncard_rep)
+        tensor_cr, tensor_ncr = self.__class__.state2Tensor(
+            action_card_rep, action_noncard_rep, device=self.device
+        )
+        estimated_value = self.network(tensor_cr, tensor_ncr)
         return estimated_value
     
     def action_probs(self):
         my_options = self.possible_actions()
-        self.action_value(my_options[0])
+        
         action_num = len(my_options)
         any_option_odds = 1./action_num
         return [(action, any_option_odds) for action in my_options]
                 
     def call_big_tichu(self):
-        baseline_odds = 0.1
+        baseline_odds = 0.0
         if random.random() < baseline_odds:
             return True
         else:
@@ -128,7 +145,12 @@ class NeuralPlayer(AutonomousPlayer):
         
 def test_player():
     from tichu_env import Game
-    game = Game(0, [lambda x, y: NeuralPlayer(x, y, None) for _ in range(4)])
+    from model import TichuNet1
+    device = 'cuda'
+    tn1 = TichuNet1()
+    tn1.to(device)
+    game = Game(0, [lambda x, y: NeuralPlayer(x, y, tn1, device=device) 
+                    for _ in range(4)])
     game.run_game(upto='firstRound', verbose=True)
     print(game)
     test_idx = 0
