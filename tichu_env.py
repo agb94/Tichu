@@ -180,7 +180,7 @@ class Player:
                 seq_actions.append(StraightFlush(*seq))
 
         # consecutive pairs
-        all_pairs = filter(lambda x: isinstance(x, Pair), single_value_actions)
+        all_pairs = list(filter(lambda x: isinstance(x, Pair), single_value_actions))
         pair_counter = defaultdict(list)
         for pair in all_pairs:
             pair_counter[pair.value].append(pair)
@@ -198,7 +198,7 @@ class Player:
                 seq_actions.append(ConsecutivePair(*seq))
 
         ## Full House
-        all_triples = filter(lambda x: type(x) == Triple, single_value_actions)
+        all_triples = list(filter(lambda x: isinstance(x, Triple), single_value_actions))
         full_houses = []
         for triple in all_triples:
             for pair in all_pairs:
@@ -217,22 +217,25 @@ class Player:
         if game.current:
             current_top = game.current[-1]
             actions = filter(lambda x: x.win(current_top), available_acts)
-            if game.call_initiated and not game.call_satisifed:
-                restricted_actions = filter(lambda x: x.value == game.call_value, actions) # includes singles and bombs
-                restricted_actions = list(restricted_actions)
-                if len(restricted_actions) != 0:
-                    actions = restricted_actions
         else:
             if len(game.used) == 0:
                 actions = filter(lambda x: isinstance(x, Single) and x.value == 1, 
                                  available_acts)
             else:
                 actions = available_acts
-
         actions = list(actions)
-        if (len(game.used) != 0 and 
-            (((not game.call_initiated) or game.call_satisifed) or
-             len(actions) == 0)):
+
+        if game.call_initiated and not game.call_satisifed:
+            restricted_actions = filter(lambda x: x.value == game.call_value, actions) # includes singles and bombs
+            restricted_actions = list(restricted_actions)
+            if len(restricted_actions) != 0:
+                actions = restricted_actions
+        
+        if len(actions) == 0:
+            actions += [None]
+        elif (len(game.used) != 0 and # disallow pass at game start
+              (game.current) and # disallow pass at start of trick
+              ((not game.call_initiated) or game.call_satisifed)): # disallow pass when call activated
             actions += [None]
 
         assert all([isinstance(action, Combination) or action is None for action in actions])
@@ -341,7 +344,12 @@ class Game:
             # pass
             self.pass_count += 1
             if self.pass_count == NUM_PLAYERS-1:
-                self.players[next_turn].obtained += sum([ c.cards for c in self.current ], [])
+                if (isinstance(self.current[-1], Single) and
+                    self.current[-1].card != Card("Dragon")):
+                    self.players[next_turn].obtained += sum([ c.cards for c in self.current ], [])
+                else:
+                    # you're supposed to choose who gets the dragon stack but tired ;P
+                    self.players[(next_turn+1)%4].obtained += sum([ c.cards for c in self.current ], [])
                 self.current = []
                 self.pass_count = 0
 
@@ -396,7 +404,9 @@ class Game:
         assert upto in stages
         upto_stage = stages.index(upto)
         
-        scores = []
+        scores = [0] * 4
+        player_orders = [-1] * 4
+        left_players = NUM_PLAYERS
         if 0 <= upto_stage:
             # initial distribution of cards and extracting big tichu
             for idx, sampled_cards in enumerate(self.deck.staged_distribute(8)):
@@ -404,7 +414,6 @@ class Game:
                 self.called_big_tichu[idx] = self.players[idx].call_big_tichu()
         if 1 <= upto_stage:
             # exchanging
-            
             for idx, sampled_cards in enumerate(self.deck.staged_distribute(6)):
                 self.players[idx].add_cards_to_hand(sampled_cards) # distributing rest of cards
             
@@ -431,14 +440,38 @@ class Game:
                 player = self.players[self.turn]
                 a = player.sample_action()
                 if verbose:
-                    print(self.turn, a)
+                    print(f'Player #{self.turn} played {str(a)}')
                 self.play(self.turn, a)
-                left_cards = map(lambda x: int(len(x.hand) == 0), self.players)
-                if sum(left_cards) >= 3:
+                if len(player.hand) == 0 and player_orders[player.player_id] == -1:
+                    left_players -= 1
+                    player_orders[player.player_id] = NUM_PLAYERS - left_players
+                    print(player_orders)
+                    if verbose:
+                        print(f'Player #{player.player_id} has used all their cards.')
+                if left_players == 1:
                     break
+            last_player = list(filter(lambda x: len(x.hand) != 0, self.players))[0]
+            player_orders[last_player.player_id] = NUM_PLAYERS
+            print(player_orders)
+            assert sum(player_orders) == NUM_PLAYERS*(NUM_PLAYERS+1)/2
+            assert left_players == 1
+            assert all(map(lambda x: x != -1, player_orders))
         if 4 <= upto_stage:
             # scoring
-            scores = [self.__class__.card_scorer(player.obtained) for player in self.players]
+            for team_id in range(2):
+                if player_orders[team_id] + player_orders[team_id+2] == 3:
+                    scores[team_id], scores[team_id+2] = 100, 100
+                    scores[1-team_id], scores[1-team_id+2] = 0, 0
+            
+            if sum(scores) == 0:
+                init_scores = [self.__class__.card_scorer(player.obtained) 
+                               for player in self.players]
+                last_hand_score = self.__class__.card_scorer(last_player.hand)
+                last_obtained_score = init_scores[last_player.player_id]
+                init_scores[last_player.player_id] -= last_obtained_score
+                first_player_id = player_orders.index(1)
+                init_scores[first_player_id] += last_hand_score + last_obtained_score
+                scores = init_scores[:]
 
         return scores
         
@@ -618,7 +651,7 @@ class FourCards(Combination, Bomb):
         assert len(set(card_values)) == 1
         card_suites = list([c.suite for c in cards])
         assert len(set(card_suites)) == 4
-        self.cards = cards
+        self.cards = list(cards)
         self.value = min(card_values)
 
 if __name__ == "__main__":
