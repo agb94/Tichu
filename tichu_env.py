@@ -445,14 +445,12 @@ class Game:
                 if len(player.hand) == 0 and player_orders[player.player_id] == -1:
                     left_players -= 1
                     player_orders[player.player_id] = NUM_PLAYERS - left_players
-                    print(player_orders)
                     if verbose:
                         print(f'Player #{player.player_id} has used all their cards.')
                 if left_players == 1:
                     break
             last_player = list(filter(lambda x: len(x.hand) != 0, self.players))[0]
             player_orders[last_player.player_id] = NUM_PLAYERS
-            print(player_orders)
             assert sum(player_orders) == NUM_PLAYERS*(NUM_PLAYERS+1)/2
             assert left_players == 1
             assert all(map(lambda x: x != -1, player_orders))

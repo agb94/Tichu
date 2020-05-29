@@ -45,11 +45,15 @@ class RandomPlayer(AutonomousPlayer):
 
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
-    def __init__(self, game, player_id, network, device='cuda'):
+    def __init__(self, game, player_id, network, 
+                 recording=False, default_temp = 1.0, device='cuda'):
         super().__init__(game, player_id)
         self.network = network
         self.device = device
-        self.records = []
+        self.recording = recording
+        self.default_temp = default_temp
+        if recording:
+            self.records = []
     
     def normalized_playerid(self, id):
         return (id - self.player_id) % NUM_PLAYERS
@@ -79,7 +83,7 @@ class NeuralPlayer(AutonomousPlayer):
                 state_val = 2
             elif card in known_cards:
                 card_owner = self.card_locs[card]
-                state_val = self.normalized_playerid(card_owner) + 3
+                state_val = self.normalized_playerid(card_owner) + 2
             elif card in self.game.unused_cards:
                 state_val = 6
             else:
@@ -97,7 +101,7 @@ class NeuralPlayer(AutonomousPlayer):
     
     def noncard_rep(self, action):
         if action is None:
-            curr_owner = (self.game.turn - (self.game.pass_count-1)) % 4
+            curr_owner = (self.game.turn - (self.game.pass_count+1)) % 4
             owner_rep = self.normalized_playerid(curr_owner)
             call_value = 0
         else:
@@ -129,20 +133,23 @@ class NeuralPlayer(AutonomousPlayer):
         estimated_value = self.network(tensor_cr, tensor_ncr).item()
         return estimated_value
     
-    def action_probs(self, softmax_T = 1.):
+    def action_probs(self, softmax_T = None):
         my_options = self.possible_actions()
         action_values = np.array([self.action_value(action) for action in my_options])
         action_logits = action_values - np.max(action_values) # numeric stability
-        action_probs = np.exp(action_logits/softmax_T)
+        if softmax_T is None:
+            action_probs = np.exp(action_logits/self.default_temp)
+        else:
+            action_probs = np.exp(action_logits/softmax_T)
         action_probs = action_probs/np.sum(action_probs)
         assert (np.sum(action_probs) - 1) < 1e-5
         return [(my_options[i], action_probs[i])
                 for i in range(len(my_options))]
     
-    def sample_action(self, record=False):
+    def sample_action(self):
         # reimplemented for recording
         sampled_action = super().sample_action()
-        if record:
+        if self.recording:
             self.record(sampled_action)
         return sampled_action
                 
@@ -165,16 +172,20 @@ class NeuralPlayer(AutonomousPlayer):
             action_card_rep, action_noncard_rep, device='cpu'
         )
 
-        obtained_cards = []
+        scores = []
         for player in self.game.players:
             norm_pid = self.normalized_playerid(player.player_id)
-            obtained_cards.append((norm_pid, player.obtained))
-        self.records.append((state_reps, obtained_cards))
+            scores.append((norm_pid, Game.card_scorer(player.obtained)))
+        self.records.append((state_reps, scores))
+    
+    def export_data(self):
+        return self.records
 
 class HumanPlayer(Player):
     def print_hand(self):
+        self.hand.sort()
         print('Your cards are:')
-        for c_idx, card in enumerate(sorted(self.hand)):
+        for c_idx, card in enumerate(self.hand):
             print(c_idx, card)
 
     def sample_action(self):
@@ -211,7 +222,6 @@ class HumanPlayer(Player):
             exchange_list.append((idx, card_id))
         return exchange_list
 
-
 def test_player():
     from tichu_env import Game
     from model import TichuNet1
@@ -221,8 +231,9 @@ def test_player():
     robot_players = [lambda x, y: NeuralPlayer(x, y, tn1, device=device) 
                      for _ in range(3)]
     all_players = robot_players + [HumanPlayer]
+    random.shuffle(all_players)
     game = Game(0, all_players)
-    game.run_game(upto='firstRound', verbose=True)
+    game.run_game(upto='scoring', verbose=True)
     print(game)
     
 if __name__ == '__main__':
