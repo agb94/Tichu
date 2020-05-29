@@ -422,7 +422,7 @@ class Game:
                 player = self.players[self.turn]
                 a = player.sample_action()
                 if verbose:
-                    print(self.turn, a)
+                    print(f'Player #{self.turn} played {str(a)}')
                 self.play(self.turn, a)
                 new_turn = False
         if 3 <= upto_stage:

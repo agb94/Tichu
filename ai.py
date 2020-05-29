@@ -171,14 +171,57 @@ class NeuralPlayer(AutonomousPlayer):
             obtained_cards.append((norm_pid, player.obtained))
         self.records.append((state_reps, obtained_cards))
 
+class HumanPlayer(Player):
+    def print_hand(self):
+        print('Your cards are:')
+        for c_idx, card in enumerate(sorted(self.hand)):
+            print(c_idx, card)
+
+    def sample_action(self):
+        self.print_hand()
+        actions = self.possible_actions()
+        print('You have the following available actions:')
+        for a_idx, action in enumerate(actions):
+            print(f' {a_idx} | {str(action)}')
+        idx = self._secure_input('Which one will you play? ', int)
+        return actions[idx]
+    
+    def call_big_tichu(self):
+        self.print_hand()
+        user_decision = input('Would you like to play big tichu (y/n)? ')
+        if 'y' in user_decision:
+            return True
+        else:
+            return False
+    
+    def _secure_input(self, query_str, f):
+        while True:
+            try:
+                return f(input(query_str))
+            except ValueError:
+                print('Unknown input format, please try again.')
+
+    def choose_exchange(self):
+        self.print_hand()
+        print(f'You are player #{self.player_id}')
+        other_idxs = list(filter(lambda x: x != self.player_id, range(4)))
+        exchange_list = []
+        for idx in other_idxs:
+            card_id = self._secure_input(f'Choose card to send to player {idx}: ', int)
+            exchange_list.append((idx, card_id))
+        return exchange_list
+
+
 def test_player():
     from tichu_env import Game
     from model import TichuNet1
     device = 'cuda'
     tn1 = TichuNet1()
     tn1.to(device)
-    game = Game(0, [lambda x, y: NeuralPlayer(x, y, tn1, device=device) 
-                    for _ in range(4)])
+    robot_players = [lambda x, y: NeuralPlayer(x, y, tn1, device=device) 
+                     for _ in range(3)]
+    all_players = robot_players + [HumanPlayer]
+    game = Game(0, all_players)
     game.run_game(upto='firstRound', verbose=True)
     print(game)
     
