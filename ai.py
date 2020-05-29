@@ -49,6 +49,7 @@ class NeuralPlayer(AutonomousPlayer):
         super().__init__(game, player_id)
         self.network = network
         self.device = device
+        self.records = []
     
     def normalized_playerid(self, id):
         return (id - self.player_id) % NUM_PLAYERS
@@ -59,8 +60,12 @@ class NeuralPlayer(AutonomousPlayer):
         norm_card_states = np.zeros((4, 13))
         spec_card_states = np.zeros((4, 1))
         
-        modified_hand = set(self.hand) - set(action.cards)
-        curr_cards = set(sum([c.cards for c in self.game.current], [])) | set(action.cards)
+        modified_hand = set(self.hand)
+        curr_cards = set(sum([c.cards for c in self.game.current], []))
+        if action is not None:
+            modified_hand -= set(action.cards)
+            curr_cards |= set(action.cards)
+            
         used_cards = set(self.game.used)
         known_cards = set(self.card_locs.keys())
         # card state key: 0 in my hand; 1 in current play; 2 played; 
@@ -121,15 +126,25 @@ class NeuralPlayer(AutonomousPlayer):
         tensor_cr, tensor_ncr = self.__class__.state2Tensor(
             action_card_rep, action_noncard_rep, device=self.device
         )
-        estimated_value = self.network(tensor_cr, tensor_ncr)
+        estimated_value = self.network(tensor_cr, tensor_ncr).item()
         return estimated_value
     
-    def action_probs(self):
+    def action_probs(self, softmax_T = 1.):
         my_options = self.possible_actions()
-        
-        action_num = len(my_options)
-        any_option_odds = 1./action_num
-        return [(action, any_option_odds) for action in my_options]
+        action_values = np.array([self.action_value(action) for action in my_options])
+        action_logits = action_values - np.max(action_values) # numeric stability
+        action_probs = np.exp(action_logits/softmax_T)
+        action_probs = action_probs/np.sum(action_probs)
+        assert (np.sum(action_probs) - 1) < 1e-5
+        return [(my_options[i], action_probs[i])
+                for i in range(len(my_options))]
+    
+    def sample_action(self, record=False):
+        # reimplemented for recording
+        sampled_action = super().sample_action()
+        if record:
+            self.record(sampled_action)
+        return sampled_action
                 
     def call_big_tichu(self):
         baseline_odds = 0.0
@@ -142,7 +157,20 @@ class NeuralPlayer(AutonomousPlayer):
         other_idxs = list(filter(lambda x: x != self.player_id, range(4)))
         picked_cards = random.sample(range(len(self.hand)), 3)
         return list(zip(other_idxs, picked_cards))
-        
+    
+    def record(self, action):
+        action_card_rep = self.card_rep(action)
+        action_noncard_rep = self.noncard_rep(action)
+        state_reps = self.__class__.state2Tensor(
+            action_card_rep, action_noncard_rep, device='cpu'
+        )
+
+        obtained_cards = []
+        for player in self.game.players:
+            norm_pid = self.normalized_playerid(player.player_id)
+            obtained_cards.append((norm_pid, player.obtained))
+        self.records.append((state_reps, obtained_cards))
+
 def test_player():
     from tichu_env import Game
     from model import TichuNet1
@@ -153,8 +181,6 @@ def test_player():
                     for _ in range(4)])
     game.run_game(upto='firstRound', verbose=True)
     print(game)
-    test_idx = 0
-    print(game.players[test_idx].state_rep(game.players[test_idx].hand))
     
 if __name__ == '__main__':
     test_player()
