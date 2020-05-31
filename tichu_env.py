@@ -203,8 +203,8 @@ class Player:
                     actions = restricted_actions
         else:
             if len(game.used) == 0:
-                actions = list(filter(lambda x: isinstance(x, Single) and x.value == 1,
-                                      available_acts))
+                actions = filter(lambda x: isinstance(x, Single) and x.value == 1,
+                                 available_acts)
             else:
                 actions = available_acts
 
