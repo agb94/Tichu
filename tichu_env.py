@@ -100,11 +100,9 @@ class Player:
         num2comb = {1: Single, 2: Pair, 3: Triple, 4: FourCards}
         single_value_actions = []
         for card_value in card_counter.keys():
+            if type(card_value) == str:
+                continue # handle special cards later
             for num_cards in range(1, 5):
-                if card_value is None and num_cards != 1:
-                    break # specials can't constitute combinations; phoenix handled later
-                if card_value == 'Dog':
-                    break # dogs aren't included anywhere; handle separately
                 for combination in combinations(card_counter[card_value], num_cards):
                     single_value_actions.append(num2comb[len(combination)](*combination))
 
@@ -112,6 +110,15 @@ class Player:
                         # phoenix combinations
                         final_combination = combination + tuple(phoenix_list) # add phoenix if exists in hand
                         single_value_actions.append(num2comb[len(final_combination)](*final_combination))
+
+        for card_value in filter(lambda x: type(x) == str and len(card_counter[x]) > 0,
+                                 card_counter.keys()): # special cards
+            card = card_counter[card_value][0]
+            if card == Card("MahJong"):
+                for value in Card.NUMBERS.values():
+                    single_value_actions.append(MahJongSingle(card, value))
+            else:
+                single_value_actions.append(Single(card))
 
         ## collect consecutive-value combinations
         # single-value consecutive sequence extraction
@@ -188,13 +195,24 @@ class Player:
         available_acts = filter(lambda x: len(set(x.cards) & curr_card_set) == len(x.cards), init_card_actions)
         if game.current:
             current_top = game.current[-1]
-            actions += list(filter(lambda x: x.win(current_top), available_acts)) + [None]
+            actions = filter(lambda x: x.win(current_top), available_acts)
+            if game.call_initiated and not game.call_satisifed:
+                restricted_actions = filter(lambda x: x.value == game.call_value, actions) # includes singles and bombs
+                restricted_actions = list(restricted_actions)
+                if len(restricted_actions) != 0:
+                    actions = restricted_actions
         else:
             if len(game.used) == 0:
                 actions = list(filter(lambda x: isinstance(x, Single) and x.value == 1,
                                       available_acts))
             else:
-                actions = list(available_acts) + [None]
+                actions = available_acts
+
+        actions = list(actions)
+        if (len(game.used) != 0 and
+            (((not game.call_initiated) or game.call_satisifed) or
+             len(actions) == 0)):
+            actions += [None]
 
         assert all([isinstance(action, Combination) or action is None for action in actions])
         return actions
@@ -248,6 +266,10 @@ class Game:
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
         self.used = list()
 
+        self.call_value = -1
+        self.call_initiated = False
+        self.call_satisifed = False
+
     def __str__(self):
         s = ""
         s += "Turn: {}\nPass Count: {}\n".format(self.turn, self.pass_count)
@@ -275,6 +297,16 @@ class Game:
             if self.current:
                 assert combi.win(self.current[-1])
             self.current.append(combi)
+            if isinstance(combi, Single) and combi.card == Card("Dog"):
+                # dog causes next player skip
+                next_turn = (next_turn + 1) % NUM_PLAYERS
+            if isinstance(combi, MahJongSingle):
+                self.call_value = combi.call_value
+                self.call_initiated = True
+
+            elif (self.call_initiated and (not self.call_satisifed) and (combi.value == self.call_value)):
+                self.call_satisifed = True
+
             for c in combi.cards:
                 self.players[player].hand.remove(c)
             self.pass_count = 0
@@ -319,6 +351,69 @@ class Game:
                 self.turn = i
                 break
 
+    @staticmethod
+    def card_scorer(cards):
+        score = 0
+        for card in cards:
+            if card.value == 10 or card.value == 13:
+                score += 10
+            elif card.value == 5:
+                score += 5
+            elif card.suite == "Dragon":
+                score += 25
+            elif card.suite == "Phoenix":
+                score -= 25
+        return score
+
+    def run_game(self, upto='scoring', verbose=False):
+        '''Runs game from beginning to a certain point.
+        If runs to scoring, returns final scores of players.
+        Otherwise, returns empty list.'''
+        stages = ['bigTichu', 'exchange', 'firstRound', 'end', 'scoring']
+        assert upto in stages
+        upto_stage = stages.index(upto)
+
+        scores = []
+        if 0 <= upto_stage:
+            # big tichu part not implemented right now...
+            pass
+        if 1 <= upto_stage:
+            # exchanging
+            exchange_pairs = []
+            for p_idx in range(NUM_PLAYERS):
+                for pair in self.players[p_idx].choose_exchange():
+                    exchange_pairs.append((p_idx,)+pair)
+            for exchange_v in exchange_pairs:
+                self.mark_exchange(*exchange_v)
+            self.exchange()
+        if 2 <= upto_stage:
+            # up to first round
+            new_turn = True
+            while new_turn or self.current:
+                player = self.players[self.turn]
+                a = player.sample_action()
+                if verbose:
+                    print(self.turn, a)
+                self.play(self.turn, a)
+                new_turn = False
+        if 3 <= upto_stage:
+            # rest of game
+            while True:
+                player = self.players[self.turn]
+                a = player.sample_action()
+                if verbose:
+                    print(self.turn, a)
+                self.play(self.turn, a)
+                left_cards = map(lambda x: int(len(x.hand) == 0), self.players)
+                if sum(left_cards) >= 3:
+                    break
+        if 4 <= upto_stage:
+            # scoring
+            scores = [self.__class__.card_scorer(player.obtained) for player in self.players]
+
+        return scores
+
+
 class Bomb():
     pass
 
@@ -359,21 +454,32 @@ class Combination():
         elif isinstance(other, Bomb):
             # self not bomb, other is
             return False
-        if self.__class__ != other.__class__:
+
+        # dog stuff
+        if isinstance(other, Single) and other.card == Card("Dog"):
+            return True
+        elif isinstance(self, Single) and self.card == Card("Dog"):
+            return False
+
+        if not (isinstance(self, other.__class__) or isinstance(other, self.__class__)):
             return False
         if len(self) != len(other):
             return False
-        self.update_value(other)
+        if isinstance(self, Single):
+            self.update_value(other)
+        else:
+            self.update_value()
         return self.value > other.value
 
 class Single(Combination):
     def __init__(self, card):
         assert isinstance(card, Card)
-        assert card != Card("Dog")
         self.cards = [card]
 
         if card == Card("MahJong"):
             self.value = 1
+        elif card == Card("Dog"):
+            self.value = 0
         elif card == Card("Dragon"):
             self.value = INF
         elif card == Card("Phoenix"):
@@ -390,6 +496,18 @@ class Single(Combination):
             pass
         if self.card == Card("Phoenix"):
             self.value = current_top.value + 0.5
+
+class MahJongSingle(Single):
+    def __init__(self, card, call_value):
+        assert card == Card("MahJong")
+        self.cards = [card]
+        self.call_value = call_value
+        self.value = 1
+
+    def __str__(self):
+        org_str = super().__str__()
+        return org_str + f'; called {self.call_value}'
+
 
 class Pair(Combination):
     def __init__(self, *cards):
@@ -446,7 +564,7 @@ class Straight(Combination):
                 assert i == 0
             else:
                 assert c == Card("Phoenix") or c.value == self.value + i
-        self.cards = cards
+        self.cards = list(cards)
 
 # Bomb
 class StraightFlush(Combination, Bomb):
