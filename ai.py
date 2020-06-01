@@ -46,11 +46,13 @@ class RandomPlayer(AutonomousPlayer):
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
     def __init__(self, game, player_id, network, 
-                 recording=False, default_temp = 1.0, device='cuda'):
+                 default_temp = 1.0, device='cuda',
+                 recording=False, debug=False):
         super().__init__(game, player_id)
         self.network = network
         self.device = device
         self.recording = recording
+        self.debug = debug
         self.default_temp = default_temp
         if recording:
             self.records = []
@@ -143,8 +145,13 @@ class NeuralPlayer(AutonomousPlayer):
             action_probs = np.exp(action_logits/softmax_T)
         action_probs = action_probs/np.sum(action_probs)
         assert (np.sum(action_probs) - 1) < 1e-5
-        return [(my_options[i], action_probs[i])
-                for i in range(len(my_options))]
+        
+        if self.debug:
+            print('----')
+            for a_idx, action in enumerate(my_options):
+                print(f'{str(action)} | estimated gain {action_values[a_idx]:.3f}, probability {action_probs[a_idx]:.3f}')
+            print('----')
+        return [(my_options[i], action_probs[i]) for i in range(len(my_options))]
     
     def sample_action(self):
         # reimplemented for recording
