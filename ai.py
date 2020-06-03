@@ -21,6 +21,9 @@ class AutonomousPlayer(Player):
     
     def call_big_tichu(self):
         raise NotImplementedError
+    
+    def call_small_tichu(self):
+        raise NotImplementedError
 
 class RandomPlayer(AutonomousPlayer):
     '''Simple player that performs random actions.'''
@@ -38,10 +41,11 @@ class RandomPlayer(AutonomousPlayer):
     
     def call_big_tichu(self):
         baseline_odds = 0.1
-        if random.random() < baseline_odds:
-            return True
-        else:
-            return False
+        return random.random() < baseline_odds
+    
+    def call_small_tichu(self):
+        baseline_odds = 0.1
+        return random.random() < baseline_odds
 
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
@@ -102,6 +106,9 @@ class NeuralPlayer(AutonomousPlayer):
         return norm_card_states, spec_card_states
     
     def noncard_rep(self, action):
+        player_card_nums = [len(self.game.players[idx%4].hand) 
+                            for idx in range(self.player_id, self.player_id+4)]
+        assert player_card_nums[0] == len(self.hand)
         if action is None:
             curr_owner = (self.game.turn - (self.game.pass_count+1)) % 4
             owner_rep = self.normalized_playerid(curr_owner)
@@ -112,19 +119,19 @@ class NeuralPlayer(AutonomousPlayer):
                 call_value = action.call_value - 1
             else:
                 call_value = 0
-        return owner_rep, call_value
+            player_card_nums[0] -= len(action.cards)
+        
+        assert all(map(lambda x: 14>=x>=0, player_card_nums))
+        return owner_rep, call_value, player_card_nums
 
     @classmethod
     def state2Tensor(cls, card_rep, noncard_rep, device='cuda'):
-        norm_cr, spec_cr = card_rep
-        owner_idx, call_idx = noncard_rep
-        norm_cr = torch.LongTensor(norm_cr).unsqueeze(0).to(device)
-        spec_cr = torch.LongTensor(spec_cr).unsqueeze(0).to(device)
+        card_rep = tuple(torch.LongTensor(cr).unsqueeze(0).to(device)
+                         for cr in card_rep)
+        noncard_rep = tuple(torch.LongTensor([ncr]).unsqueeze(0).to(device)
+                            for ncr in noncard_rep)
 
-        owner_idx = torch.LongTensor([owner_idx]).unsqueeze(0).to(device)
-        call_idx = torch.LongTensor([call_idx]).unsqueeze(0).to(device)
-
-        return (norm_cr, spec_cr), (owner_idx, call_idx)
+        return card_rep, noncard_rep
 
     def action_value(self, action):
         action_card_rep = self.card_rep(action)
@@ -162,10 +169,11 @@ class NeuralPlayer(AutonomousPlayer):
                 
     def call_big_tichu(self):
         baseline_odds = 0.0
-        if random.random() < baseline_odds:
-            return True
-        else:
-            return False
+        return random.random() < baseline_odds
+    
+    def call_small_tichu(self):
+        baseline_odds = 0.0
+        return random.random() < baseline_odds
     
     def choose_exchange(self):
         other_idxs = list(filter(lambda x: x != self.player_id, range(4)))
@@ -188,7 +196,7 @@ class NeuralPlayer(AutonomousPlayer):
     def export_data(self):
         return self.records
 
-class HumanPlayer(Player):
+class HumanPlayer(AutonomousPlayer):
     def print_hand(self):
         self.hand.sort()
         print('Your cards are:')
@@ -207,6 +215,14 @@ class HumanPlayer(Player):
     def call_big_tichu(self):
         self.print_hand()
         user_decision = input('Would you like to play big tichu (y/n)? ')
+        if 'y' in user_decision:
+            return True
+        else:
+            return False
+    
+    def call_small_tichu(self):
+        self.print_hand()
+        user_decision = input('Would you like to play small tichu (y/n)? ')
         if 'y' in user_decision:
             return True
         else:
@@ -231,9 +247,9 @@ class HumanPlayer(Player):
 
 def test_player():
     from tichu_env import Game
-    from model import TichuNet1
+    from model import TichuNet2
     device = 'cuda'
-    tn1 = TichuNet1()
+    tn1 = TichuNet2()
     tn1.to(device)
     robot_players = [lambda x, y: NeuralPlayer(x, y, tn1, device=device) 
                      for _ in range(3)]

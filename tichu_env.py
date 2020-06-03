@@ -66,7 +66,7 @@ class Deck:
         return [shuffled[p*num_cards:(p+1)*num_cards] for p in range(NUM_PLAYERS)]
     
     def staged_distribute(self, num_cards, seed=None):
-        if seed is None:
+        if seed is not None:
             random.seed(seed)
         shuffled = self.cards[:]
         random.shuffle(shuffled)
@@ -211,6 +211,7 @@ class Player:
     def _get_possible_actions(cls, game, hand, init_card_actions=None):
         actions = []
         curr_card_set = set(hand)
+        call_restricted = False
         if init_card_actions is None:
             init_card_actions = cls.find_all_combinations(hand)
         available_acts = filter(lambda x: len(set(x.cards) & curr_card_set) == len(x.cards), init_card_actions)
@@ -230,12 +231,12 @@ class Player:
             restricted_actions = list(restricted_actions)
             if len(restricted_actions) != 0:
                 actions = restricted_actions
+                call_restricted = True
         
-        if len(actions) == 0:
-            actions += [None]
-        elif (len(game.used) != 0 and # disallow pass at game start
-              (game.current) and # disallow pass at start of trick
-              ((not game.call_initiated) or game.call_satisifed)): # disallow pass when call activated
+        if len(actions) == 0 or (game.current and (not call_restricted)):
+            # if you don't have anything you can do, you pass
+            # you can only play nothing when you are not starting
+            # you cannot play nothing when you are restricted by the call
             actions += [None]
 
         assert all([isinstance(action, Combination) or action is None for action in actions])
@@ -293,8 +294,7 @@ class Game:
         self.call_value = -1
         self.call_initiated = False
         self.call_satisifed = False
-        self.called_big_tichu = [False for _ in range(4)]
-        self.called_small_tichu = [False for _ in range(4)]
+        self.called_tichu = [0 for _ in range(4)] # 0 for no call, 1 for small, 2 for big
 
     def __str__(self):
         s = ""
@@ -400,21 +400,23 @@ class Game:
         '''Runs game from beginning to a certain point.
         If runs to scoring, returns final scores of players.
         Otherwise, returns empty list.'''
-        stages = ['bigTichu', 'exchange', 'firstRound', 'end', 'scoring']
+        stages = ['bigTichu', 'exchange', 'firstAction', 'end', 'scoring']
         assert upto in stages
         upto_stage = stages.index(upto)
-        scores = [0] * 4
-        player_orders = [-1] * 4
+        scores = [0] * NUM_PLAYERS
+        player_orders = [-1] * NUM_PLAYERS
         left_players = NUM_PLAYERS
         if 0 <= upto_stage:
             # initial distribution of cards and extracting big tichu
             for idx, sampled_cards in enumerate(self.deck.staged_distribute(8)):
                 self.players[idx].add_cards_to_hand(sampled_cards)
-                self.called_big_tichu[idx] = self.players[idx].call_big_tichu()
+                self.called_tichu[idx] = 2*int(self.players[idx].call_big_tichu())
         if 1 <= upto_stage:
             # exchanging
             for idx, sampled_cards in enumerate(self.deck.staged_distribute(6)):
                 self.players[idx].add_cards_to_hand(sampled_cards) # distributing rest of cards
+                if self.called_tichu[idx] == 0:
+                    self.called_tichu[idx] = int(self.players[idx].call_small_tichu())
             
             exchange_pairs = []
             for p_idx in range(NUM_PLAYERS):
@@ -424,18 +426,12 @@ class Game:
                 self.mark_exchange(*exchange_v)
             self.exchange()
         if 2 <= upto_stage:
-            # up to first round
-            new_turn = True
-            while new_turn or self.current:
-                player = self.players[self.turn]
-                a = player.sample_action()
-                if verbose:
-                    print(f'Player #{self.turn} played {str(a)}')
-                self.play(self.turn, a)
-                new_turn = False
-        if 3 <= upto_stage:
-            # rest of game
-            while True:
+            # actual game
+            while left_players > 1:
+                for p_idx in filter(lambda x: self.called_tichu[x] == 0, range(NUM_PLAYERS)):
+                    if len(self.players[p_idx].hand) == 14:
+                        self.called_tichu[p_idx] = int(self.players[p_idx].call_small_tichu())
+                    
                 player = self.players[self.turn]
                 a = player.sample_action()
                 if verbose:
@@ -446,8 +442,9 @@ class Game:
                     player_orders[player.player_id] = NUM_PLAYERS - left_players
                     if verbose:
                         print(f'Player #{player.player_id} has used all their cards.')
-                if left_players == 1:
-                    break
+                if upto_stage == 2:
+                    return
+                
             last_player = list(filter(lambda x: len(x.hand) != 0, self.players))[0]
             player_orders[last_player.player_id] = NUM_PLAYERS
             assert sum(player_orders) == NUM_PLAYERS*(NUM_PLAYERS+1)/2
@@ -469,6 +466,13 @@ class Game:
                 first_player_id = player_orders.index(1)
                 init_scores[first_player_id] += last_hand_score + last_obtained_score
                 scores = init_scores[:]
+            
+            # tichu processing
+            for p_idx in range(NUM_PLAYERS):
+                if player_orders[p_idx] == 1:
+                    scores[p_idx] += self.called_tichu[p_idx]*100
+                else:
+                    scores[p_idx] -= self.called_tichu[p_idx]*100
 
         return scores
 
@@ -554,7 +558,9 @@ class Single(Combination):
         if not current_top:
             pass
         if self.card == Card("Phoenix"):
-            self.value = current_top.value + 0.5
+            if not (isinstance(current_top, Single) and current_top.card == Card("Dragon")):
+                # disallow dragon winning
+                self.value = current_top.value + 0.5
 
 class MahJongSingle(Single):
     def __init__(self, card, call_value):
