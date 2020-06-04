@@ -398,8 +398,7 @@ class Game:
 
     def run_game(self, upto='scoring', verbose=False):
         '''Runs game from beginning to a certain point.
-        If runs to scoring, returns final scores of players.
-        Otherwise, returns empty list.'''
+        If runs to scoring, returns (place, point) list.'''
         stages = ['bigTichu', 'exchange', 'firstAction', 'end', 'scoring']
         assert upto in stages
         upto_stage = stages.index(upto)
@@ -446,6 +445,8 @@ class Game:
                     return
                 
             last_player = list(filter(lambda x: len(x.hand) != 0, self.players))[0]
+            third_player = self.players[player_orders.index(3)]
+            third_player.obtained += sum([ c.cards for c in self.current ], [])
             player_orders[last_player.player_id] = NUM_PLAYERS
             assert sum(player_orders) == NUM_PLAYERS*(NUM_PLAYERS+1)/2
             assert left_players == 1
@@ -474,7 +475,7 @@ class Game:
                 else:
                     scores[p_idx] -= self.called_tichu[p_idx]*100
 
-        return scores
+        return list(zip(player_orders, scores))
 
 
 class Bomb():
