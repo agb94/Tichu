@@ -7,10 +7,12 @@ import pyro
 import pyro.infer
 import pyro.optim
 import pyro.distributions as dist
+from UI import *
 from pyro.optim import Adam
 from pyro.infer import SVI, Trace_ELBO
 from tichu_env import *
 from ai import RandomPlayer
+from collections import OrderedDict
 
 def get_known_cards(game, observer):
     return set(game.players[observer].card_locs.keys())
@@ -18,170 +20,151 @@ def get_known_cards(game, observer):
 def get_unknown_cards(game, observer):
     return set(game.unused_cards) - get_known_cards(game, observer)
 
+def idx_2_id(observer):
+    others = [pid for pid in range(NUM_PLAYERS) if pid != observer]
+    mapping = OrderedDict()
+    for i, pid in enumerate(others):
+        mapping[i] = pid
+    return mapping
+
+def id_2_idx(observer):
+    others = [pid for pid in range(NUM_PLAYERS) if pid != observer]
+    mapping = OrderedDict()
+    for i, pid in enumerate(others):
+        mapping[pid] = i
+    return mapping
+
 def model(game, observer, action):
     if game.turn == observer:
         return None
     known_cards = get_known_cards(game, observer)
-    unknown_cards = get_unknown_cards(game, observer)
-    other_players, num_hand_cards = [], []
-    for pid in range(NUM_PLAYERS):
-        if pid == observer:
-            continue
-        other_players.append(pid)
-        num_hand_cards.append(len(set(game.players[pid].hand) - known_cards))
-    player_idx = other_players.index(game.turn)
-    hand_probs = torch.tensor(num_hand_cards, dtype=torch.float32)
-    assert torch.sum(hand_probs) == len(unknown_cards)
-    normalized_hand_probs = hand_probs / torch.sum(hand_probs)
-    #print("There are {}/{} unknown locations of cards".format(len(unknown_cards), len(game.deck.cards)))
-    #print("Size of hands {}: {}".format(other_players, hand_probs))
-    #print("probability of hands of {}: {}".format(other_players, normalized_hand_probs))
+    unknown_cards = list(get_unknown_cards(game, observer))
 
-    unknown_cards = list(unknown_cards)
+    idx_to_id = idx_2_id(observer)
+    id_to_idx = id_2_idx(observer)
+
+    num_cards_in_hand = {
+        i: len(set(game.players[idx_to_id[i]].hand) - known_cards)
+        for i in idx_to_id
+    }
+
     probs = []
     for card in unknown_cards:
         """
         FIXME: prior distribution of cards?
         """
-        a = torch.tensor(1.0)
-        b = torch.tensor(1.0)
-        c = torch.tensor(1.0)
-        player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack([a, b, c])))
+        theta = [
+            torch.tensor(global_card_dist[card][i])
+            for i in idx_to_id
+        ]
+        player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack(theta)))
         normalized_player_probs = player_probs #/ torch.sum(player_probs)
-        #print(card, normalized_player_probs)
         probs.append(normalized_player_probs)
     probs = torch.stack(probs)
-
-    hands = [list() for p in other_players]
-    card_probs = [list() for p in other_players]
+    hands = {i: list() for i in idx_to_id}
+    card_probs = {i: list() for i in idx_to_id}
     for i, card in random.sample(tuple(enumerate(unknown_cards)), len(unknown_cards)):
         assigned = False
         while not assigned:
             player = torch.distributions.Categorical(probs=probs[i]).sample()
             #player = pyro.sample('{}_locs'.format(card), dist.Categorical(probs=probs[i]))
-            if len(hands[int(player)]) < num_hand_cards[int(player)]:
+            if len(hands[int(player)]) < num_cards_in_hand[int(player)]:
                 hands[int(player)].append(card)
                 card_probs[int(player)].append(probs[i][int(player)])
                 assigned = True
+    """
+    for i in idx_to_id:
+        pyro.sample(
+            '{}_card_assignment'.format(i),
+            dist.Bernoulli(probs=torch.prod(torch.tensor(card_probs[i]))),
+            obs=torch.tensor(1.)
+        )
+    """
 
-    for i, card in enumerate(hands[player_idx]):
-        #print(card, card_probs[player_idx][i])
-        pass
+    ai_player = RandomPlayer(game, game.turn)
+    ai_player.hand = hands[id_to_idx[game.turn]]
 
-    ai_player = RandomPlayer(game, other_players[player_idx], hands[player_idx])
-
-    actions, probs = tuple([list(t) for t in zip(*ai_player.action_probs())])
+    actions, action_probs = tuple([list(t) for t in zip(*ai_player.action_probs())])
     if action not in actions:
         actions.append(action)
-        probs.append(.0)
+        action_probs.append(.00000001)
 
-    action_dist = dist.Categorical(probs=torch.tensor(probs))
+    action_dist = dist.Categorical(probs=torch.tensor(action_probs))
+    #for i, a in enumerate(actions):
+    #    print("possible:", a, action_probs[i])
+    #print("real:", action, action_probs[actions.index(action)])
     pyro.sample('action', action_dist, obs=torch.tensor(actions.index(action)))
     return hands
 
 def guide(game, observer, action):
     if game.turn == observer:
         return None
-    known_cards = get_known_cards(game, observer)
-    unknown_cards = get_unknown_cards(game, observer)
-    other_players, num_hand_cards = [], []
-    for pid in range(NUM_PLAYERS):
-        if pid == observer:
-            continue
-        other_players.append(pid)
-        num_hand_cards.append(len(set(game.players[pid].hand) - known_cards))
-    player_idx = other_players.index(game.turn)
-    hand_probs = torch.tensor(num_hand_cards, dtype=torch.float32)
-    assert torch.sum(hand_probs) == len(unknown_cards)
-    normalized_hand_probs = hand_probs / torch.sum(hand_probs)
-    #print("There are {}/{} unknown locations of cards".format(len(unknown_cards), len(game.deck.cards)))
-    #print("Size of hands {}: {}".format(other_players, hand_probs))
-    #print("probability of hands of {}: {}".format(other_players, normalized_hand_probs))
+    unknown_cards = list(get_unknown_cards(game, observer))
 
-    unknown_cards = list(unknown_cards)
-    probs = []
+    idx_to_id = idx_2_id(observer)
+
     for card in unknown_cards:
-        """
-        FIXME: prior distribution of cards?
-        """
-        a = pyro.param("a_{}".format(card), torch.tensor(1.0), constraint=constraints.positive)
-        b = pyro.param("b_{}".format(card), torch.tensor(1.0), constraint=constraints.positive)
-        c = pyro.param("c_{}".format(card), torch.tensor(1.0), constraint=constraints.positive)
-        player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack([a, b, c])))
-        normalized_player_probs = player_probs #/ torch.sum(player_probs)
-        #print(card, normalized_player_probs)
-        probs.append(normalized_player_probs)
-    return
-    """
-    return
-    probs = torch.stack(probs)
+        theta = [
+            pyro.param("{}_{}".format(i, card), torch.tensor(global_card_dist[card][i]), constraint=constraints.positive)
+            for i in idx_to_id
+        ]
+        player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack(theta)))
 
-    hands = [list() for p in other_players]
-    card_probs = [list() for p in other_players]
-    for i, card in random.sample(tuple(enumerate(unknown_cards)), len(unknown_cards)):
-        assigned = False
-        while not assigned:
-            #player = pyro.sample('{}_locs'.format(card), dist.Categorical(probs=probs[i]))
-            player = torch.distributions.Categorical(probs=probs[i]).sample()
-            if len(hands[int(player)]) < num_hand_cards[int(player)]:
-                hands[int(player)].append(card)
-                card_probs[int(player)].append(probs[i][int(player)])
-                assigned = True
-
-    for i, card in enumerate(hands[player_idx]):
-        #print(card, card_probs[player_idx][i])
-        pass
-
-    ai_player = RandomPlayer(game, other_players[player_idx], hands[player_idx])
-
-    actions, probs = tuple([list(t) for t in zip(*ai_player.action_probs())])
-    if action not in actions:
-        actions.append(action)
-        probs.append(.0)
-
-    action_dist = dist.Categorical(probs=torch.tensor(probs))
-    pyro.sample('action', action_dist, obs=torch.tensor(actions.index(action)))
-    return hands
-    """
-
-game = Game(seed=0)
 my_id = 0
-game.mark_exchange(0, 1, 0)
-game.mark_exchange(0, 2, 7)
-game.mark_exchange(0, 3, 1)
-game.mark_exchange(1, 0, 0)
-game.mark_exchange(1, 2, 1)
-game.mark_exchange(1, 3, 7)
-game.mark_exchange(2, 0, 7)
-game.mark_exchange(2, 1, 0)
-game.mark_exchange(2, 3, 1)
-game.mark_exchange(3, 0, 0)
-game.mark_exchange(3, 1, 7)
-game.mark_exchange(3, 2, 1)
-game.exchange()
-game.play(game.turn, game.players[game.turn].possible_actions()[0])
+game = Game(0, [RandomPlayer for i in range(4)])
+scaler = 10.0
+idx_to_id = idx_2_id(my_id)
+global_card_dist = {
+    card: [1.0/(NUM_PLAYERS-1) * scaler for i in range(NUM_PLAYERS - 1)]
+    for card in game.deck.cards
+}
 
-# setup the optimizer
-adam_params = {"lr": 0.0005, "betas": (0.90, 0.999)}
-optimizer = Adam(adam_params)
-# setup the inference algorithm
-svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
-n_steps = 1000
-# do gradient steps
-action = game.players[game.turn].possible_actions()[0]
-for step in range(n_steps):
-    svi.step(game, my_id, action)
-    if step % 100 == 0:
-        print("Step: {}".format(step))
+game.run_game(upto='firstAction')
 
-print(game.turn)
-for card in game.players[game.turn].hand:
-    print(card)
+card_holders = {}
+colors = [bcolors.FAIL, bcolors.OKGREEN, bcolors.OKBLUE]
+for i in idx_to_id:
+    for card in game.players[idx_to_id[i]].hand:
+        card_holders[card] = i
 
-for card in get_unknown_cards(game, my_id):
-    # grab the learned variational parameters
-    a = pyro.param("a_{}".format(card)).item()
-    b = pyro.param("b_{}".format(card)).item()
-    c = pyro.param("c_{}".format(card)).item()
-    print(card)
-    print(a, b, c, "*****" if card in game.players[game.turn].hand else "")
+print(card_holders)
+
+for t in range(10):
+    print(game.players[game.turn].possible_actions())
+    real_action = random.choice(game.players[game.turn].possible_actions())
+    print(game.turn, real_action)
+
+    if game.turn != my_id:
+        # setup the optimizer
+        adam_params = {"lr": 0.0001, "betas": (0.90, 0.999)}
+        optimizer = Adam(adam_params)
+        # setup the inference algorithm
+        svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
+        n_steps = 1000
+        # do gradient steps
+        for step in range(n_steps):
+            svi.step(game, my_id, real_action)
+            if step % 100 == 0:
+                print("Step: {}".format(step))
+
+        print(game.turn)
+        for card in game.players[game.turn].hand:
+            print(card)
+
+        for card in get_unknown_cards(game, my_id):
+            # grab the learned variational parameters
+            for i in idx_to_id:
+                global_card_dist[card][i] = pyro.param("{}_{}".format(i, card)).item()
+            for i in idx_to_id:
+                global_card_dist[card][i] = global_card_dist[card][i]/sum(global_card_dist[card])*scaler
+            print(card,
+                " ".join([
+                    coloring(str(global_card_dist[card][i]), colors[i])
+                    if card_holders[card] == i
+                    else str(global_card_dist[card][i])
+                    for i in idx_to_id
+                ])
+            )
+            #print(global_card_dist[card], "*****" if card in game.players[game.turn].hand else "")
+
+    game.play(game.turn, real_action)
