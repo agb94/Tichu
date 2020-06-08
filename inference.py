@@ -18,7 +18,7 @@ def get_known_cards(game, observer):
     return set(game.players[observer].card_locs.keys())
 
 def get_unknown_cards(game, observer):
-    return set(game.unused_cards) - get_known_cards(game, observer)
+    return list(set(game.unused_cards) - get_known_cards(game, observer))
 
 def idx_2_id(observer):
     others = [pid for pid in range(NUM_PLAYERS) if pid != observer]
@@ -38,7 +38,9 @@ def model(game, observer, action):
     if game.turn == observer:
         return None
     known_cards = get_known_cards(game, observer)
-    unknown_cards = list(get_unknown_cards(game, observer))
+    if action:
+        known_cards.update(action.cards)
+    unknown_cards = list(set(game.unused_cards) - known_cards)
 
     idx_to_id = idx_2_id(observer)
     id_to_idx = id_2_idx(observer)
@@ -60,6 +62,7 @@ def model(game, observer, action):
         player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack(theta)))
         normalized_player_probs = player_probs #/ torch.sum(player_probs)
         probs.append(normalized_player_probs)
+
     probs = torch.stack(probs)
     hands = {i: list() for i in idx_to_id}
     card_probs = {i: list() for i in idx_to_id}
@@ -83,6 +86,8 @@ def model(game, observer, action):
 
     ai_player = RandomPlayer(game, game.turn)
     ai_player.hand = hands[id_to_idx[game.turn]]
+    if action:
+        ai_player.hand += action.cards
 
     actions, action_probs = tuple([list(t) for t in zip(*ai_player.action_probs())])
     if action not in actions:
@@ -99,7 +104,10 @@ def model(game, observer, action):
 def guide(game, observer, action):
     if game.turn == observer:
         return None
-    unknown_cards = list(get_unknown_cards(game, observer))
+    known_cards = get_known_cards(game, observer)
+    if action:
+        known_cards.update(action.cards)
+    unknown_cards = list(set(game.unused_cards) - known_cards)
 
     idx_to_id = idx_2_id(observer)
 
@@ -152,6 +160,8 @@ for t in range(10):
             print(card)
 
         for card in get_unknown_cards(game, my_id):
+            if real_action and card in real_action.cards:
+                continue
             # grab the learned variational parameters
             for i in idx_to_id:
                 global_card_dist[card][i] = pyro.param("{}_{}".format(i, card)).item()
