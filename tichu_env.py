@@ -410,12 +410,16 @@ class Game:
             for idx, sampled_cards in enumerate(self.deck.staged_distribute(8)):
                 self.players[idx].add_cards_to_hand(sampled_cards)
                 self.called_tichu[idx] = 2*int(self.players[idx].call_big_tichu())
+                if verbose and self.called_tichu[idx] != 0:
+                    print(f'Player {idx} called tichu({self.called_tichu[idx]}).')
         if 1 <= upto_stage:
             # exchanging
             for idx, sampled_cards in enumerate(self.deck.staged_distribute(6)):
                 self.players[idx].add_cards_to_hand(sampled_cards) # distributing rest of cards
                 if self.called_tichu[idx] == 0:
                     self.called_tichu[idx] = int(self.players[idx].call_small_tichu())
+                    if verbose and self.called_tichu[idx] != 0:
+                        print(f'Player {idx} called tichu({self.called_tichu[idx]}).')
             
             exchange_pairs = []
             for p_idx in range(NUM_PLAYERS):
@@ -430,6 +434,8 @@ class Game:
                 for p_idx in filter(lambda x: self.called_tichu[x] == 0, range(NUM_PLAYERS)):
                     if len(self.players[p_idx].hand) == 14:
                         self.called_tichu[p_idx] = int(self.players[p_idx].call_small_tichu())
+                        if verbose and self.called_tichu[p_idx] != 0:
+                            print(f'Player {p_idx} called tichu({self.called_tichu[p_idx]}).')
                     
                 player = self.players[self.turn]
                 a = player.sample_action()
