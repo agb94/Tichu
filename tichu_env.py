@@ -56,7 +56,7 @@ class Deck:
         for special in Card.SPECIALS:
             self.cards.append(Card(special))
         self.distributed_cards = []
-    
+
     def distribute(self, seed=None):
         if seed is not None:
             random.seed(seed)
@@ -64,13 +64,13 @@ class Deck:
         random.shuffle(shuffled)
         num_cards = int(len(self.cards) / NUM_PLAYERS)
         return [shuffled[p*num_cards:(p+1)*num_cards] for p in range(NUM_PLAYERS)]
-    
+
     def staged_distribute(self, num_cards, seed=None):
         if seed is not None:
             random.seed(seed)
         shuffled = self.cards[:]
         random.shuffle(shuffled)
-        
+
         card_set = set(self.cards)
         to_give = []
         for i in range(NUM_PLAYERS):
@@ -97,7 +97,7 @@ class Player:
         if len(self.init_card_actions) == 0:
             self.init_card_actions = self.__class__.find_all_combinations(self.hand)
         return self.__class__._get_possible_actions(self.game, self.hand, self.init_card_actions)
-    
+
     def add_cards_to_hand(self, cards):
         assert all(map(lambda x: isinstance(x, Card), cards))
         self.hand += cards
@@ -232,7 +232,7 @@ class Player:
             if len(restricted_actions) != 0:
                 actions = restricted_actions
                 call_restricted = True
-        
+
         if len(actions) == 0 or (game.current and (not call_restricted)):
             # if you don't have anything you can do, you pass
             # you can only play nothing when you are not starting
@@ -449,7 +449,7 @@ class Game:
                         print(f'Player #{player.player_id} has used all their cards.')
                 if upto_stage == 2:
                     return
-                
+
             last_player = list(filter(lambda x: len(x.hand) != 0, self.players))[0]
             third_player = self.players[player_orders.index(3)]
             third_player.obtained += sum([ c.cards for c in self.current ], [])
@@ -463,9 +463,9 @@ class Game:
                 if player_orders[team_id] + player_orders[team_id+2] == 3:
                     scores[team_id], scores[team_id+2] = 100, 100
                     scores[1-team_id], scores[1-team_id+2] = 0, 0
-            
+
             if sum(scores) == 0:
-                init_scores = [self.__class__.card_scorer(player.obtained) 
+                init_scores = [self.__class__.card_scorer(player.obtained)
                                for player in self.players]
                 last_hand_score = self.__class__.card_scorer(last_player.hand)
                 last_obtained_score = init_scores[last_player.player_id]
@@ -473,7 +473,7 @@ class Game:
                 first_player_id = player_orders.index(1)
                 init_scores[first_player_id] += last_hand_score + last_obtained_score
                 scores = init_scores[:]
-            
+
             # tichu processing
             for p_idx in range(NUM_PLAYERS):
                 if player_orders[p_idx] == 1:
