@@ -11,8 +11,9 @@ from UI import *
 from pyro.optim import Adam
 from pyro.infer import SVI, Trace_ELBO
 from tichu_env import *
-from ai import RandomPlayer
+from ai import RandomPlayer, GreedyPlayer
 from collections import OrderedDict
+from operator import itemgetter
 
 def get_known_cards(game, observer):
     return set(game.players[observer].card_locs.keys())
@@ -84,20 +85,20 @@ def model(game, observer, action):
         )
     """
 
-    ai_player = RandomPlayer(game, game.turn)
+    ai_player = GreedyPlayer(game, game.turn)
     ai_player.hand = hands[id_to_idx[game.turn]]
     if action:
         ai_player.hand += action.cards
-
+    #print("===============card===============")
+    #for card in ai_player.hand:
+    #    print(card)
+    #print("==================================")
     actions, action_probs = tuple([list(t) for t in zip(*ai_player.action_probs())])
-    if action not in actions:
-        actions.append(action)
-        action_probs.append(.00000001)
-
+    #print(actions, action_probs)
+    #print(actions, action_probs)
+    #print([str(a) for a in actions])
+    #print(action)
     action_dist = dist.Categorical(probs=torch.tensor(action_probs))
-    #for i, a in enumerate(actions):
-    #    print("possible:", a, action_probs[i])
-    #print("real:", action, action_probs[actions.index(action)])
     pyro.sample('action', action_dist, obs=torch.tensor(actions.index(action)))
     return hands
 
@@ -119,7 +120,7 @@ def guide(game, observer, action):
         player_probs = pyro.sample('{}_probs'.format(card), dist.Dirichlet(torch.stack(theta)))
 
 my_id = 0
-game = Game(0, [RandomPlayer for i in range(4)])
+game = Game(0, [GreedyPlayer for i in range(4)])
 scaler = 10.0
 idx_to_id = idx_2_id(my_id)
 global_card_dist = {
@@ -137,9 +138,8 @@ for i in idx_to_id:
 
 print(card_holders)
 
-for t in range(10):
-    print(game.players[game.turn].possible_actions())
-    real_action = random.choice(game.players[game.turn].possible_actions())
+for t in range(20):
+    real_action = max(game.players[game.turn].action_probs(), key=itemgetter(1))[0]
     print(game.turn, real_action)
 
     if game.turn != my_id:

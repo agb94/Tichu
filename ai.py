@@ -56,19 +56,19 @@ class GreedyPlayer(RandomPlayer):
             largest_action = max(actual_actions, key=lambda x: len(x.cards))
         else:
             largest_action = None
-            
+
         ret_list = []
         for action in my_options:
             if action is largest_action:
                 if len(my_options) == 1:
-                    ret_list.append((action, 1))
+                    ret_list.append((action, 1.))
                 else:
                     ret_list.append((action, 1-epsilon))
             else:
                 assert len(my_options) > 1
                 ret_list.append((action, epsilon/(len(my_options)-1)))
         return ret_list
-    
+
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
     def __init__(self, game, player_id, network,
@@ -99,10 +99,10 @@ class NeuralPlayer(AutonomousPlayer):
             action_cards = set(action.cards)
         else:
             action_cards = set()
-            
+
         used_cards = set(self.game.used)
         known_cards = set(self.card_locs.keys())
-        # card state key: 0 in my hand; 1 played by action; 2 on stack now; 
+        # card state key: 0 in my hand; 1 played by action; 2 on stack now;
         # 3 used, 4-6 known but unused; 7 unknown
         for card in self.game.deck.cards:
             if card in modified_hand:
@@ -211,7 +211,7 @@ class NeuralPlayer(AutonomousPlayer):
             return False
         else:
             return random.random() < expected_tichu_gain/4 # maximum 1/2 odds
-    
+
     def call_small_tichu(self):
         place_odds = self.run_net(None, 'place_odds')[0]
         if self.debug:
@@ -225,7 +225,7 @@ class NeuralPlayer(AutonomousPlayer):
             return False
         else:
             return random.random() < expected_tichu_gain/2 # maximum 1/2 odds
-    
+
     def choose_exchange(self):
         other_idxs = list(filter(lambda x: x != self.player_id, range(4)))
         picked_cards = random.sample(range(len(self.hand)), 3)

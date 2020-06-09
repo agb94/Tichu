@@ -15,7 +15,7 @@ class TichuNet1(nn.Module):
         self.card_state_emb = nn.Embedding(card_state_num, card_emb_dim)
         self.owner_emb = nn.Embedding(NUM_PLAYERS, other_emb_dim)
         self.call_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
-        
+
         self.value_summarizer = nn.Sequential(
             nn.Conv2d(card_emb_dim, card_emb_dim, (4, 1)),
             nn.ReLU(),
@@ -35,7 +35,7 @@ class TichuNet1(nn.Module):
         )
         self.ced = card_emb_dim
         self.oed = other_emb_dim
-    
+
     def forward(self, card_reps, noncard_reps):
         norm_cr, spec_cr = card_reps
         owner_idx, call_idx = noncard_reps
@@ -66,7 +66,7 @@ class TichuNet2(nn.Module):
         self.owner_emb = nn.Embedding(NUM_PLAYERS, other_emb_dim)
         self.call_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
         self.cards_left_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
-        
+
         self.value_summarizer = nn.Sequential(
             nn.Conv2d(card_emb_dim, card_emb_dim, (4, 1)),
             nn.ReLU(),
