@@ -40,13 +40,35 @@ class RandomPlayer(AutonomousPlayer):
         return list(zip(other_idxs, picked_cards))
     
     def call_big_tichu(self):
-        baseline_odds = 0.1
+        baseline_odds = 0.0
         return random.random() < baseline_odds
     
     def call_small_tichu(self):
-        baseline_odds = 0.1
+        baseline_odds = 0.0
         return random.random() < baseline_odds
 
+class GreedyPlayer(RandomPlayer):
+    '''Plays largest possible action, with episilon chance of random'''
+    def action_probs(self, epsilon=0.05):
+        my_options = self.possible_actions()
+        actual_actions = list(filter(lambda x: x is not None, my_options))
+        if len(actual_actions) > 0:
+            largest_action = max(actual_actions, key=lambda x: len(x.cards))
+        else:
+            largest_action = None
+            
+        ret_list = []
+        for action in my_options:
+            if action is largest_action:
+                if len(my_options) == 1:
+                    ret_list.append((action, 1))
+                else:
+                    ret_list.append((action, 1-epsilon))
+            else:
+                assert len(my_options) > 1
+                ret_list.append((action, epsilon/(len(my_options)-1)))
+        return ret_list
+    
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
     def __init__(self, game, player_id, network, 
@@ -74,24 +96,28 @@ class NeuralPlayer(AutonomousPlayer):
         curr_cards = set(sum([c.cards for c in self.game.current], []))
         if action is not None:
             modified_hand -= set(action.cards)
-            curr_cards |= set(action.cards)
+            action_cards = set(action.cards)
+        else:
+            action_cards = set()
             
         used_cards = set(self.game.used)
         known_cards = set(self.card_locs.keys())
-        # card state key: 0 in my hand; 1 in current play; 2 played; 
-        # 3-5 known but unused; 6 unknown
+        # card state key: 0 in my hand; 1 played by action; 2 on stack now; 
+        # 3 used, 4-6 known but unused; 7 unknown
         for card in self.game.deck.cards:
-            if card in modified_hand: # not sure if ok
+            if card in modified_hand:
                 state_val = 0
-            elif card in curr_cards:
+            elif card in action_cards:
                 state_val = 1
-            elif card in used_cards:
+            elif card in curr_cards:
                 state_val = 2
+            elif card in used_cards:
+                state_val = 3
             elif card in known_cards:
                 card_owner = self.card_locs[card]
-                state_val = self.normalized_playerid(card_owner) + 2
+                state_val = self.normalized_playerid(card_owner) + 3
             elif card in self.game.unused_cards:
-                state_val = 6
+                state_val = 7
             else:
                 raise ValueError(f'{card} is of unknown state')
             
@@ -102,15 +128,20 @@ class NeuralPlayer(AutonomousPlayer):
                 suite_idx = Card.COLORS.index(card.suite)
                 number_idx = Card.NUMBERS[card.number] - 2
                 norm_card_states[suite_idx, number_idx] = state_val
-        
+
         return norm_card_states, spec_card_states
     
     def noncard_rep(self, action):
         player_card_nums = [len(self.game.players[idx%4].hand) 
                             for idx in range(self.player_id, self.player_id+4)]
+        tichu_states = [self.game.called_tichu[idx%4]
+                        for idx in range(self.player_id, self.player_id+4)]
         assert player_card_nums[0] == len(self.hand)
         if action is None:
-            curr_owner = (self.game.turn - (self.game.pass_count+1)) % 4
+            if self.game.turn is None:
+                curr_owner = 0
+            else:
+                curr_owner = (self.game.turn - (self.game.pass_count+1)) % 4
             owner_rep = self.normalized_playerid(curr_owner)
             call_value = 0
         else:
@@ -122,7 +153,7 @@ class NeuralPlayer(AutonomousPlayer):
             player_card_nums[0] -= len(action.cards)
         
         assert all(map(lambda x: 14>=x>=0, player_card_nums))
-        return owner_rep, call_value, player_card_nums
+        return owner_rep, call_value, player_card_nums, tichu_states
 
     @classmethod
     def state2Tensor(cls, card_rep, noncard_rep, device='cuda'):
@@ -133,18 +164,18 @@ class NeuralPlayer(AutonomousPlayer):
 
         return card_rep, noncard_rep
 
-    def action_value(self, action):
+    def run_net(self, action, ret_form='value'):
         action_card_rep = self.card_rep(action)
         action_noncard_rep = self.noncard_rep(action)
         tensor_cr, tensor_ncr = self.__class__.state2Tensor(
             action_card_rep, action_noncard_rep, device=self.device
         )
-        estimated_value = self.network(tensor_cr, tensor_ncr).item()
+        estimated_value = self.network(tensor_cr, tensor_ncr, ret_form=ret_form)
         return estimated_value
     
     def action_probs(self, softmax_T = None):
         my_options = self.possible_actions()
-        action_values = np.array([self.action_value(action) for action in my_options])
+        action_values = np.array([self.run_net(action, 'value').item() for action in my_options])
         action_logits = action_values - np.max(action_values) # numeric stability
         if softmax_T is None:
             action_probs = np.exp(action_logits/self.default_temp)
@@ -168,12 +199,32 @@ class NeuralPlayer(AutonomousPlayer):
         return sampled_action
                 
     def call_big_tichu(self):
-        baseline_odds = 0.0
-        return random.random() < baseline_odds
+        place_odds = self.run_net(None, 'place_odds')[0]
+        if self.debug:
+            print('----')
+            print(place_odds)
+            print('----')
+        expected_tichu_gain = 2*place_odds[0]-2*torch.sum(place_odds[1:])
+        if self.recording:
+            self.record(None)
+        if expected_tichu_gain < 0:
+            return False
+        else:
+            return random.random() < expected_tichu_gain/4 # maximum 1/2 odds
     
     def call_small_tichu(self):
-        baseline_odds = 0.0
-        return random.random() < baseline_odds
+        place_odds = self.run_net(None, 'place_odds')[0]
+        if self.debug:
+            print('----')
+            print(place_odds)
+            print('----')
+        expected_tichu_gain = 1*place_odds[0]-1*torch.sum(place_odds[1:])
+        if self.recording:
+            self.record(None)
+        if expected_tichu_gain < 0:
+            return False
+        else:
+            return random.random() < expected_tichu_gain/2 # maximum 1/2 odds
     
     def choose_exchange(self):
         other_idxs = list(filter(lambda x: x != self.player_id, range(4)))
