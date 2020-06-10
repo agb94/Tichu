@@ -69,6 +69,30 @@ class GreedyPlayer(RandomPlayer):
                 ret_list.append((action, epsilon/(len(my_options)-1)))
         return ret_list
 
+class PatientGreedyPlayer(RandomPlayer):
+    '''Greedy player that plays lowest value card among maximal group'''
+    def action_probs(self, epsilon=0.05):
+        my_options = self.possible_actions()
+        actual_actions = list(filter(lambda x: x is not None, my_options))
+        if len(actual_actions) > 0:
+            max_card_num = max(len(a.cards) for a in actual_actions)
+            maximal_actions = filter(lambda x: len(x.cards) == max_card_num, actual_actions)
+            best_action = min(maximal_actions, key=lambda x: x.value)
+        else:
+            best_action = None
+
+        ret_list = []
+        for action in my_options:
+            if action is best_action:
+                if len(my_options) == 1:
+                    ret_list.append((action, 1.))
+                else:
+                    ret_list.append((action, 1-epsilon))
+            else:
+                assert len(my_options) > 1
+                ret_list.append((action, epsilon/(len(my_options)-1)))
+        return ret_list
+
 class NeuralPlayer(AutonomousPlayer):
     '''Player that relies on value network to compute next move'''
     def __init__(self, game, player_id, network,
