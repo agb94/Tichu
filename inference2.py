@@ -42,7 +42,7 @@ def id_2_idx(observer):
         mapping[pid] = i
     return mapping
 
-def model(game, observer, action):
+def model(game, observer, action, tmp_player):
     if game.turn == observer:
         return None
     known_hand_cards = set()
@@ -65,7 +65,7 @@ def model(game, observer, action):
         picked = pyro.sample("card_{}".format(i), dist.Categorical(probs=torch.tensor(card_dist)))
         sampled.append(unknown_cards[picked])
         card_dist[picked] = torch.tensor(.0)
-    ai_player = NeuralPlayer(game, game.turn, tn1, device=device)
+    ai_player = tmp_player(game, game.turn)
     ai_player.hand = sampled[:]
     ai_player.hand += list(known_hand_cards)
 
@@ -87,16 +87,26 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', '-m', type=str, default=None)
     parser.add_argument('--observer', '-o', type=int, default=None)
+    parser.add_argument('--player', '-p', type=str, default="greedy")
     args = parser.parse_args()
     my_id = args.observer
-    device = 'cpu'
-    tn1 = TichuNet3b()
-    if args.model:
-        tn1.load_state_dict(torch.load(args.model, map_location=torch.device('cpu')))
-    #tn1.to(device)
-    robot_players = [lambda x, y: NeuralPlayer(x, y, tn1, device=device, default_temp=.1)
-                     for _ in range(4)]
-    game = Game(0, robot_players)
+
+    if args.player == 'random':
+        tmp_player = lambda g, i: RandomPlayer(g, i)
+        players = [RandomPlayer for _ in range(4)]
+    if args.player == 'greedy':
+        tmp_player = lambda g, i: GreedyPlayer(g, i)
+        players = [GreedyPlayer for _ in range(4)]
+    elif args.player == 'neural':
+        device = 'cpu'
+        tn1 = TichuNet3b()
+        if args.model:
+            tn1.load_state_dict(torch.load(args.model, map_location=torch.device('cpu')))
+        #tn1.to(device)
+        tmp_player = lambda g, i: NeuralPlayer(g, i, device=device, default_temp=.1)
+        players = [lambda x, y: NeuralPlayer(x, y, tn1, device=device, default_temp=.1)
+                   for _ in range(4)]
+    game = Game(0, players)
     game.run_game(upto='firstAction')
 
     encoder = OneHotEncoder(game.deck.cards)
@@ -129,7 +139,7 @@ if __name__ == "__main__":
             y = []
             # do gradient steps
             for step in range(n_steps):
-                cards, weight = model(game, my_id, real_action)
+                cards, weight = model(game, my_id, real_action, tmp_player)
                 X.append(encoder.encode(cards))
                 y.append(weight)
                 for card in cards:
@@ -138,7 +148,6 @@ if __name__ == "__main__":
                     cards_weight[card].append(weight)
                 if (step-1) % 10 == 0:
                     print("Step: {}".format(step))
-                #print(cards, weight)
             sorted_cards = sorted([(np.mean(cards_weight[card]), card) for card in cards_weight])
             print("="*50)
             updated_cards = []
