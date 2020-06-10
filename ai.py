@@ -177,6 +177,7 @@ class NeuralPlayer(AutonomousPlayer):
             player_card_nums[0] -= len(action.cards)
 
         assert all(map(lambda x: 14>=x>=0, player_card_nums))
+        player_card_nums = list(map(lambda x: min(x, 13), player_card_nums))
         return owner_rep, call_value, player_card_nums, tichu_states
 
     @classmethod
