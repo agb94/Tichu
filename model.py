@@ -123,7 +123,7 @@ class TichuNet3b(nn.Module):
         self.call_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
         self.cards_left_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
         self.tichu_emb = nn.Embedding(3, other_emb_dim)
-        
+
         self.value_summarizer = nn.Sequential(
             nn.Conv2d(card_emb_dim, card_emb_dim, (4, 1)),
             nn.ReLU(),

@@ -420,7 +420,7 @@ class Game:
                     self.called_tichu[idx] = int(self.players[idx].call_small_tichu())
                     if verbose and self.called_tichu[idx] != 0:
                         print(f'Player {idx} called tichu({self.called_tichu[idx]}).')
-            
+
             exchange_pairs = []
             for p_idx in range(NUM_PLAYERS):
                 for pair in self.players[p_idx].choose_exchange():
@@ -436,7 +436,7 @@ class Game:
                         self.called_tichu[p_idx] = int(self.players[p_idx].call_small_tichu())
                         if verbose and self.called_tichu[p_idx] != 0:
                             print(f'Player {p_idx} called tichu({self.called_tichu[p_idx]}).')
-                    
+
                 player = self.players[self.turn]
                 a = player.sample_action()
                 if verbose:
