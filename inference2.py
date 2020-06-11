@@ -13,13 +13,13 @@ import pyro.distributions as dist
 from sklearn.preprocessing import minmax_scale
 from scipy.stats import rankdata
 
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from operator import itemgetter
 from itertools import combinations
 
 from model import TichuNet2, TichuNet3b
 from tichu_env import *
-from ai import RandomPlayer, GreedyPlayer, NeuralPlayer
+from ai import RandomPlayer, PatientGreedyPlayer, NeuralPlayer
 from UI import *
 
 def get_known_cards(game, observer):
@@ -65,7 +65,7 @@ def model(game, observer, action):
         picked = pyro.sample("card_{}".format(i), dist.Categorical(probs=torch.tensor(card_dist)))
         sampled.append(unknown_cards[picked])
         card_dist[picked] = torch.tensor(.0)
-    ai_player = NeuralPlayer(game, game.turn, tn1, device=device)
+    ai_player = PatientGreedyPlayer(game, game.turn)
     ai_player.hand = sampled[:]
     ai_player.hand += list(known_hand_cards)
 
@@ -94,7 +94,7 @@ if __name__ == "__main__":
     if args.model:
         tn1.load_state_dict(torch.load(args.model, map_location=torch.device('cpu')))
     #tn1.to(device)
-    robot_players = [lambda x, y: NeuralPlayer(x, y, tn1, device=device, default_temp=.1)
+    robot_players = [PatientGreedyPlayer
                      for _ in range(4)]
     game = Game(0, robot_players)
     game.run_game(upto='firstAction')
@@ -122,24 +122,39 @@ if __name__ == "__main__":
         print([str(a) for a in game.current], game.turn, real_action)
         real_hand = game.players[game.turn].hand
         if game.turn != my_id:
-            cards_weight = {}
+
+            known_hand_cards = set()
+            known_card_locs = game.players[my_id].card_locs
+            for card in known_card_locs:
+                if known_card_locs[card] == game.turn and card in game.unused_cards:
+                    known_hand_cards.add(card)
+            if real_action:
+                known_hand_cards.update(real_action.cards)
+            unknown_cards = set(game.unused_cards) - set(known_card_locs.keys()) - set(known_hand_cards)
+            unknown_cards = list(unknown_cards)
+
+            cards_weight = {c: [] for c in unknown_cards}
             turn_idx = id_to_idx[game.turn]
             n_steps = 1000
             X = []
             y = []
+
+            all_weights = []
             # do gradient steps
             for step in range(n_steps):
                 cards, weight = model(game, my_id, real_action)
                 X.append(encoder.encode(cards))
                 y.append(weight)
-                for card in cards:
-                    if card not in cards_weight:
-                        cards_weight[card] = list()
-                    cards_weight[card].append(weight)
-                if (step-1) % 10 == 0:
+                all_weights.append(weight)
+                for card in cards_weight.keys():
+                    if card in cards:
+                        cards_weight[card].append(weight)
+                    else:
+                        cards_weight[card].append(0)
+                if (step-1) % 100 == 0:
                     print("Step: {}".format(step))
-                #print(cards, weight)
-            sorted_cards = sorted([(np.mean(cards_weight[card]), card) for card in cards_weight])
+            weight_sum = sum(all_weights)
+            sorted_cards = sorted([(np.sum(cards_weight[card])/weight_sum, card) for card in cards_weight])
             print("="*50)
             updated_cards = []
             for weight, card in sorted_cards:
