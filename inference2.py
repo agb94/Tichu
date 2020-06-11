@@ -19,7 +19,7 @@ from itertools import combinations
 
 from model import TichuNet2, TichuNet3b
 from tichu_env import *
-from ai import RandomPlayer, PatientGreedyPlayer, NeuralPlayer
+from ai import RandomPlayer, GreedyPlayer, NeuralPlayer
 from UI import *
 
 def get_known_cards(game, observer):
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     idx_to_id = idx_2_id(my_id)
     id_to_idx = id_2_idx(my_id)
     global_card_dist = {
-        card: torch.tensor([1., 1., 1.])
+        card: torch.tensor([1./3, 1./3, 1./3])
         for card in game.deck.cards
     }
 
@@ -143,6 +143,9 @@ if __name__ == "__main__":
             unknown_cards = set(game.unused_cards) - set(known_card_locs.keys()) - set(known_hand_cards)
             unknown_cards = list(unknown_cards)
 
+            real_guess_cards = list(set(real_hand) - set(known_card_locs.keys()) - set(known_hand_cards))
+            uniform_prior = len(real_guess_cards)/len(unknown_cards)
+
             cards_weight = {c: [] for c in unknown_cards}
             turn_idx = id_to_idx[game.turn]
             n_steps = 1000
@@ -165,12 +168,13 @@ if __name__ == "__main__":
                     print("Step: {}".format(step))
             weight_sum = sum(all_weights)
             sorted_cards = sorted([(np.sum(cards_weight[card])/weight_sum, card) for card in cards_weight])
+            print(f'Prior: {coloring(uniform_prior, bcolors.WARNING)}')
             print("="*50)
             updated_cards = []
             for weight, card in sorted_cards:
                 print(coloring(card, bcolors.OKGREEN) if card in real_hand else str(card), weight)
-                global_card_dist[card][turn_idx] *= weight
-                updated_cards.append((weight * global_card_dist[card][turn_idx], card))
+                global_card_dist[card][turn_idx] *= weight/uniform_prior
+                updated_cards.append(((weight / uniform_prior) * (global_card_dist[card][turn_idx]), card))
             print("="*50)
             updated_cards.sort()
             for weight, card in updated_cards:
