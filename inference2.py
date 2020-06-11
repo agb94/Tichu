@@ -25,6 +25,12 @@ from UI import *
 def get_known_cards(game, observer):
     return set(game.players[observer].card_locs.keys())
 
+def brier_calculator(odds, labels):
+    assert type(odds) == list
+    assert type(labels) == list
+    se = [(o-l)**2 for o, l in zip(odds, labels)]
+    return np.mean(se)
+
 def get_unknown_cards(game, observer):
     return list(set(game.unused_cards) - get_known_cards(game, observer))
 
@@ -168,6 +174,7 @@ if __name__ == "__main__":
                     print("Step: {}".format(step))
             weight_sum = sum(all_weights)
             sorted_cards = sorted([(np.sum(cards_weight[card])/weight_sum, card) for card in cards_weight])
+            print('----')
             print(f'Prior: {coloring(uniform_prior, bcolors.WARNING)}')
             print("="*50)
             updated_cards = []
@@ -175,9 +182,22 @@ if __name__ == "__main__":
                 print(coloring(card, bcolors.OKGREEN) if card in real_hand else str(card), weight)
                 global_card_dist[card][turn_idx] *= weight/uniform_prior
                 updated_cards.append(((weight / uniform_prior) * (global_card_dist[card][turn_idx]), card))
+            true_labels = [int(c in real_hand) for _, c in sorted_cards]
+            label_odds = [w for w, _ in sorted_cards]
+            uniform_score = brier_calculator([uniform_prior]*len(true_labels), true_labels)
+            print(f'               Uniform Brier score: {uniform_score}')
+            single_action_score = brier_calculator(label_odds, true_labels)
+            eval_color = bcolors.FAIL if single_action_score > uniform_score else bcolors.OKGREEN
+            print(f'Single-action IS-using Brier score: {coloring(single_action_score, eval_color)}')
+
             print("="*50)
             updated_cards.sort()
             for weight, card in updated_cards:
                 print(coloring(card, bcolors.OKGREEN) if card in real_hand else str(card), weight)
             print("="*50)
+            label_odds = [w for w, _ in updated_cards]
+            global_score = brier_calculator(label_odds, true_labels)
+            eval_color = bcolors.FAIL if global_score > uniform_score else bcolors.OKGREEN
+            print(f'        Uniform Brier score: {uniform_score}')
+            print(f'Global IS-using Brier score: {coloring(global_score, eval_color)}')
         game.play(game.turn, real_action)
