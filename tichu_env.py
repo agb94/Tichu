@@ -315,11 +315,11 @@ class Game:
     def unused_cards(self):
         return set(self.deck.cards) - set(self.used)
 
-    def play(self, player, combi):
-        assert self.turn == player
+    def play(self, player_id, combi):
+        assert self.turn == player_id
         next_turn = (self.turn + 1) % NUM_PLAYERS
         if combi:
-            assert all([c in self.players[player].hand for c in combi.cards])
+            assert all([c in self.players[player_id].hand for c in combi.cards])
             if self.current:
                 assert combi.win(self.current[-1])
             self.current.append(combi)
@@ -334,12 +334,12 @@ class Game:
                 self.call_satisifed = True
 
             for c in combi.cards:
-                self.players[player].hand.remove(c)
+                self.players[player_id].hand.remove(c)
             self.pass_count = 0
             for card in combi.cards:
                 self.used.append(card)
                 for player in self.players:
-                    player.remember_card_loc(player, card)
+                    player.remember_card_loc(player_id, card)
         else:
             # pass
             self.pass_count += 1
