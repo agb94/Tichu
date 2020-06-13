@@ -103,6 +103,11 @@ class Player:
         self.hand += cards
         self.card_locs.update({card: self.player_id for card in self.hand})
 
+    def reset_hand(self, cards):
+        assert len(self.hand) == len(cards)
+        self.hand = cards
+        self.init_card_actions = self.__class__.find_all_combinations(self.hand)
+
     @classmethod
     def find_all_combinations(cls, hand):
         '''Finds all combinations of given hand'''
@@ -290,6 +295,7 @@ class Game:
         self.turn = None
         self.exchange_index = np.identity(NUM_PLAYERS) - 1
         self.used = list()
+        self.play_logs = []
 
         self.call_value = -1
         self.call_initiated = False
@@ -352,7 +358,7 @@ class Game:
                     self.players[(next_turn+1)%4].obtained += sum([ c.cards for c in self.current ], [])
                 self.current = []
                 self.pass_count = 0
-
+        self.play_logs.append((player_id, combi, self.call_satisifed))
         self.turn = next_turn
 
     def mark_exchange(self, giver, receiver, card_index):
