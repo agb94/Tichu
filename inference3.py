@@ -61,12 +61,11 @@ def sample_and_weight(game, observer, initial_state, no_call_cards):
         if pid != observer:
             action_probs = initial_state.players[pid].action_probs()
             assert (np.sum([p for a, p in action_probs]) - 1) < 1e-5
-            prob = [item[1] for item in action_probs if item[0] == combi]
+            prob = [item[1] for item in action_probs if item[0] == combi and (not isinstance(combi, MahJongSingle) or combi.call_value == item[0].call_value)]
             if len(prob) != 1:
                 return None
             probs.append(prob[0])
         initial_state.play(pid, combi)
-
     return hands, float(np.sum(np.log(probs)))
 
 def main(args):
@@ -92,7 +91,7 @@ def main(args):
 
     # Initialize Game
     game = Game(args.gameseed, players)
-    game.run_game(upto='firstAction')
+    game.run_game(upto='exchange')
     initial_state = deepcopy(game)
     no_call_cards = []
 
