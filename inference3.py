@@ -158,6 +158,11 @@ def main(args):
 
     metrics = { "AP": average_precision_score, "ROC AUC": roc_auc_score }
 
+    rand = np.random.rand(actual.shape[0], actual.shape[1])
+    rand[:, 0] = .0
+    for i in range(actual.shape[0]):
+        rand[i] = rand[i]/np.sum(rand[i])
+    print(rand)
     """
     Per player
     """
@@ -170,7 +175,7 @@ def main(args):
         prediction_scores = {
             "IS": predicted[:, pid],
             "Uniform": uniform[:, pid],
-            "Random": np.random.rand(actual.shape[0])
+            "Random": rand[:, pid]
         }
         for metric in metrics:
             for ptype in prediction_scores:
@@ -199,7 +204,7 @@ def main(args):
         prediction_scores = {
             "IS": predicted[i, :],
             "Uniform": uniform[i, :],
-            "Random": np.random.rand(actual.shape[1])
+            "Random": rand[i, :]
         }
         for metric in metrics:
             for ptype in prediction_scores:
@@ -226,7 +231,7 @@ def main(args):
     prediction_scores = {
         "IS": predicted.reshape(1, -1)[0],
         "Uniform": uniform.reshape(1, -1)[0],
-        "Random": np.random.rand(actual.shape[0] * actual.shape[1])
+        "Random": rand.reshape(1, -1)[0]
     }
     all_aggr = {metric: {"IS": None, "Uniform": None, "Random": None} for metric in metrics}
     for metric in metrics:
