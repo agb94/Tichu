@@ -102,7 +102,7 @@ def main(args):
         #action_probs = game.players[game.turn].action_probs()
         #real_action = sorted(action_probs, key=operator.itemgetter(1))[-1][0]
         real_action = game.players[game.turn].sample_action()
-        if not game.call_satisifed:
+        if not game.call_satisifed and game.play_logs:
             if not game.current or isinstance(game.current[-1], MahJongSingle) or (isinstance(game.current[-1], Single) and game.current[-1].value < game.call_value):
                 if real_action is None or not any([c.value == game.call_value for c in real_action.cards]):
                     no_call_cards.append(game.turn)
