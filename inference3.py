@@ -1,7 +1,9 @@
+import os
 import argparse
 import torch
 import numpy as np
 import random
+import json
 import operator
 from tqdm import tqdm
 from copy import deepcopy
@@ -9,6 +11,8 @@ from model import TichuNet2, TichuNet3b
 from tichu_env import *
 from ai import RandomPlayer, GreedyPlayer, PatientGreedyPlayer, NeuralPlayer
 from UI import *
+from scipy.stats import rankdata
+from sklearn.metrics import f1_score, average_precision_score, roc_auc_score
 
 HAND_SIZE = len(Deck().cards) / NUM_PLAYERS
 
@@ -112,7 +116,8 @@ def main(args):
 
     print("Start sampling...")
     # Inference
-    unknown_cards = set(game.unused_cards) - set(game.players[args.observer].card_locs.keys())
+    unknown_cards = list(set(game.unused_cards) - set(game.players[args.observer].card_locs.keys()))
+    unknown_cards.sort()
     cards_weights = {c: [list() for _ in range(NUM_PLAYERS)] for c in unknown_cards}
     all_weights = []
 
@@ -146,28 +151,117 @@ def main(args):
         print(str(card) + "\t" + "\t".join([(str(weights[pid]) if pid != holder[card] else coloring(str(weights[pid]), bcolors.OKBLUE)) for pid in range(NUM_PLAYERS)]))
         uniform.append(hand_ratio)
         predicted.append(weights)
-        actual.append([int(pid == holder[card]) for pid in range(NUM_PLAYERS)])
+        actual.append([float(pid == holder[card]) for pid in range(NUM_PLAYERS)])
     predicted, actual, uniform = np.array(predicted), np.array(actual), np.array(uniform)
     print(predicted)
     print(uniform)
     print(actual)
+
+    metrics = { "AP": average_precision_score, "ROC AUC": roc_auc_score }
+
+    """
+    Per player
+    """
+    print("Per player")
+    per_player_total = {metric: {"IS": [], "Uniform": [], "Random": []} for metric in metrics}
     for pid in range(NUM_PLAYERS):
+        if pid == args.observer or hand_size[pid] == 0:
+            continue
         print("player {}".format(pid))
-        print("     IS Brier score:", np.sum(np.power(predicted[:, pid] - actual[:, pid], 2))/actual.shape[0])
-        print("   Size Brier score:", np.sum(np.power(uniform[:, pid] - actual[:, pid], 2))/actual.shape[0])
-    print("total")
-    print("     IS Brier score:", np.sum(np.power(predicted[:] - actual[:], 2))/actual.shape[0])
-    print("   Size Brier score:", np.sum(np.power(uniform[:] - actual[:], 2))/actual.shape[0])
+        prediction_scores = {
+            "IS": predicted[:, pid],
+            "Uniform": uniform[:, pid],
+            "Random": np.random.rand(actual.shape[0])
+        }
+        for metric in metrics:
+            for ptype in prediction_scores:
+                score = metrics[metric](actual[:, pid], prediction_scores[ptype])
+                print(f"{ptype:10} {metric:10}: {score}")
+                per_player_total[metric][ptype].append(score)
+        print("==================================================================")
+    # Aggregation
+    per_player_aggr = {metric: {"IS": None, "Uniform": None, "Random": None} for metric in metrics}
+    for metric in per_player_total:
+        for ptype in per_player_total[metric]:
+            averaged = np.mean(per_player_total[metric][ptype])
+            per_player_aggr[metric][ptype] = float(averaged)
+            s = f"{ptype:10} {metric:10}: {averaged}"
+            if ptype == "IS":
+                s = coloring(s, bcolors.WARNING)
+            print(s)
+
+    """
+    Per card
+    """
+    print("Per card")
+    per_card_total = {metric: {"IS": [], "Uniform": [], "Random": []} for metric in metrics}
+    for i in range(actual.shape[0]):
+        print(f"Card {unknown_cards[i]}")
+        prediction_scores = {
+            "IS": predicted[i, :],
+            "Uniform": uniform[i, :],
+            "Random": np.random.rand(actual.shape[1])
+        }
+        for metric in metrics:
+            for ptype in prediction_scores:
+                score = metrics[metric](actual[i, :], prediction_scores[ptype])
+                print(f"{ptype:10} {metric:10}: {score}")
+                per_card_total[metric][ptype].append(score)
+        print("==================================================================")
+
+    # Aggregation
+    per_card_aggr = {metric: {"IS": None, "Uniform": None, "Random": None} for metric in metrics}
+    for metric in per_card_total:
+        for ptype in per_card_total[metric]:
+            averaged = np.mean(per_card_total[metric][ptype])
+            per_card_aggr[metric][ptype] = float(averaged)
+            s = f"{ptype:10} {metric:10}: {averaged}"
+            if ptype == "IS":
+                s = coloring(s, bcolors.WARNING)
+            print(s)
+    print("==================================================================")
+
+    """
+    All together
+    """
+    prediction_scores = {
+        "IS": predicted.reshape(1, -1)[0],
+        "Uniform": uniform.reshape(1, -1)[0],
+        "Random": np.random.rand(actual.shape[0] * actual.shape[1])
+    }
+    all_aggr = {metric: {"IS": None, "Uniform": None, "Random": None} for metric in metrics}
+    for metric in metrics:
+        for ptype in prediction_scores:
+            score = metrics[metric](actual.reshape(1, -1)[0], prediction_scores[ptype])
+            print(f"{ptype:10} {metric:10}: {score}")
+            all_aggr[metric][ptype] = float(score)
+    print("==================================================================")
+
+    sample_data = {
+        "args": vars(args),
+        "results": {
+            "per_player": per_player_aggr,
+            "per_card":   per_card_aggr,
+            "all":        all_aggr
+        }
+    }
+    try:
+        with open(f"samples/{args.player}_{args.samples}_{args.run}_{args.id}.json", "w") as json_file:
+            json.dump(sample_data, json_file)
+    except:
+        os.remove(f"samples/{args.player}_{args.samples}_{args.run}_{args.id}.json")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', '-m', type=str, default=None)
+    parser.add_argument('--model', '-m', type=str, default="phase3_net3b.pth")
     parser.add_argument('--device', '-d', type=str, default="cpu")
     parser.add_argument('--player', '-p', type=str, default="greedy")
-    parser.add_argument('--gameseed', '-g', type=int, default=0)
+    parser.add_argument('--gameseed', '-g', type=int, default=None)
     parser.add_argument('--observer', '-o', type=int, default=0)
     parser.add_argument('--run', '-r', type=int, default=10)
     parser.add_argument('--samples', '-s', type=int, default=1000)
+    parser.add_argument('--id', '-i', type=int, default=0)
+
     args = parser.parse_args()
     main(args)
 
