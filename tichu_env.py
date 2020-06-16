@@ -48,7 +48,7 @@ class Card:
         return(hash(str(self)))
 
 class Deck:
-    def __init__(self):
+    def __init__(self, seed=None):
         self.cards = []
         for color in Card.COLORS:
             for number in Card.NUMBERS:
@@ -56,18 +56,19 @@ class Deck:
         for special in Card.SPECIALS:
             self.cards.append(Card(special))
         self.distributed_cards = []
+        self.seed = seed
 
-    def distribute(self, seed=None):
-        if seed is not None:
-            random.seed(seed)
+    def distribute(self):
+        if self.seed is not None:
+            random.seed(self.seed)
         shuffled = self.cards[:]
         random.shuffle(shuffled)
         num_cards = int(len(self.cards) / NUM_PLAYERS)
         return [shuffled[p*num_cards:(p+1)*num_cards] for p in range(NUM_PLAYERS)]
 
-    def staged_distribute(self, num_cards, seed=None):
-        if seed is not None:
-            random.seed(seed)
+    def staged_distribute(self, num_cards):
+        if self.seed is not None:
+            random.seed(self.seed)
         shuffled = self.cards[:]
         random.shuffle(shuffled)
 
@@ -285,7 +286,7 @@ class Game:
     def __init__(self, seed=None, players=None):
         self.current = []
         self.pass_count = 0
-        self.deck = Deck()
+        self.deck = Deck(seed)
         if players is None:
             players = [Player for _ in range(NUM_PLAYERS)]
         else:

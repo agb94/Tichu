@@ -121,7 +121,7 @@ class TichuNet3b(nn.Module):
         self.card_state_emb = nn.Embedding(card_state_num, card_emb_dim)
         self.owner_emb = nn.Embedding(NUM_PLAYERS, other_emb_dim)
         self.call_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
-        self.cards_left_emb = nn.Embedding(norm_card_type_num+2, other_emb_dim)
+        self.cards_left_emb = nn.Embedding(norm_card_type_num+1, other_emb_dim)
         self.tichu_emb = nn.Embedding(3, other_emb_dim)
 
         self.value_summarizer = nn.Sequential(
